@@ -15,3 +15,11 @@ Ao abrir o programa, você verá duas caixas brancas:
 - A caixa maior, à direita, será responsável pela visualização do desenho.
 
 Os botões posicionados no rodapé terão as mesmas funções dos botões do NCViewer, porém adaptados para atender às nossas especificações.
+
+## Dia 2
+
+Neste dia, encontrei um vídeo de um desenvolvedor estrangeiro criando um modelo simples de uma engine 3D em Python (https://www.youtube.com/watch?v=M_Hx0g5vFko), utilizando as bibliotecas Pygame, NumPy e Numba. A partir disso, concentrei meus esforços em compreender o funcionamento dessa engine, com o objetivo de adaptá-la e implementá-la em nosso software. 
+
+Em relação ao desenvolvimento do programa, foram realizadas algumas melhorias estruturais e funcionais. Inicialmente, reorganizei a disposição dos arquivos, visando facilitar a visualização das tarefas pendentes e melhorar a organização do projeto. Além disso, iniciei a implementação de matrizes e projeções matemáticas, que serão fundamentais para a geração e exibição de objetos em 3D.
+
+Por fim, o botão de “Tela Cheia” foi implementado e encontra-se funcionando corretamente.
