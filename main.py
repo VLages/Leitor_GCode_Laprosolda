@@ -7,7 +7,7 @@ from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtPrintSupport import *
 import os, sys
 
-from editor_grafico import Ui_editor_grafico
+from ui.editor_grafico import Ui_editor_grafico
 
 class editor_grafico(QDialog):
     def __init__(self,*args,**argvs):
