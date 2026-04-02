@@ -23,3 +23,11 @@ Neste dia, encontrei um vídeo de um desenvolvedor estrangeiro criando um modelo
 Em relação ao desenvolvimento do programa, foram realizadas algumas melhorias estruturais e funcionais. Inicialmente, reorganizei a disposição dos arquivos, visando facilitar a visualização das tarefas pendentes e melhorar a organização do projeto. Além disso, iniciei a implementação de matrizes e projeções matemáticas, que serão fundamentais para a geração e exibição de objetos em 3D.
 
 Por fim, o botão de “Tela Cheia” foi implementado e encontra-se funcionando corretamente.
+
+## Dia 3
+
+Hoje consegui avançar de forma significativa no desenvolvimento do software. Com o auxílio de inteligências artificiais, implementei o ambiente virtual 3D, capaz de interpretar o resultado final do GCode. Além disso, desenvolvi um parser responsável por ler o GCode e convertê-lo em parâmetros geométricos utilizáveis na renderização do ambiente 3D.
+
+A interação do usuário com o ambiente ainda se encontra em estágio inicial. Nos próximos dias, pretendo focar na melhoria da eficiência e na fluidez dos movimentos, tornando a manipulação do objeto renderizado mais responsiva.
+
+Destaca-se também a otimização do código, que permitiu alcançar altas taxas de quadros na renderização, chegando a aproximadamente 100 frames per second (FPS) no meu computador.
