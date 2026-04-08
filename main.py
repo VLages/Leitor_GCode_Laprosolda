@@ -24,7 +24,7 @@ DARK_THEME = {
     "bg2":           "#0e0e16",
     "text":          "#d2d2dc",
     "text_dim":      "#8888a0",
-    "accent":        "#ff8c00",
+    "accent":        "#2267fc",
     "border":        "#2a2a3a",
     "btn":           "#23233a",
     "btn_hover":     "#2e2e4a",
@@ -37,7 +37,7 @@ LIGHT_THEME = {
     "bg2":           "#ffffff",
     "text":          "#222230",
     "text_dim":      "#666680",
-    "accent":        "#e07000",
+    "accent":        "#2267fc",
     "border":        "#c0c0d0",
     "btn":           "#e0e0ee",
     "btn_hover":     "#d0d0e0",
@@ -198,6 +198,7 @@ class editor_grafico(QDialog):
         super().__init__(*args, **kwargs)
         self.ui = Ui_editor_grafico()
         self.ui.setupUi(self)
+
         self.setWindowFlags(
             Qt.Window |
             Qt.WindowMinimizeButtonHint |
@@ -210,13 +211,16 @@ class editor_grafico(QDialog):
 
         # Viewer 3D
         self.viewer = GCodeViewer3D(self)
-        self.ui.gridLayout_main.replaceWidget(self.ui.grafico, self.viewer)
-        self.ui.grafico.hide()
+        # Coloca o viewer dentro do placeholder (que ja esta no splitter_v)
+        placeholder_layout = QVBoxLayout(self.ui.grafico)
+        placeholder_layout.setContentsMargins(0, 0, 0, 0)
+        placeholder_layout.addWidget(self.viewer)
         self.viewer.on_segment_changed = self._on_segment_changed
+        self.viewer.on_layer_changed   = self._on_layer_changed
 
         # Aplica cores salvas no cache
-        self.viewer.color_extrude = QColor(255, 140, 0)
-        self.viewer.color_travel  = QColor(60, 60, 180)
+        self.viewer.color_extrude = QColor(34, 103, 252)   # azul do tema (#2267fc)
+        self.viewer.color_travel  = QColor(220, 60, 60)    # vermelho confortavel G0
         self.viewer.show_travel   = True
 
         # Aplica tema inicial
@@ -234,6 +238,7 @@ class editor_grafico(QDialog):
         self.ui.playbut.clicked.connect(self.iniciar_simulacao)
         self.ui.stopbut.clicked.connect(self.parar_simulacao)
         self.ui.voltarbut.clicked.connect(self.retroceder_simulacao)
+        self.ui.voltarbut.setText("◀◀")
         self.ui.prev_linebut.clicked.connect(self.linha_anterior)
         self.ui.next_linebut.clicked.connect(self.proxima_linha)
 
@@ -241,6 +246,7 @@ class editor_grafico(QDialog):
         self.ui.camdinfBut.clicked.connect(self.layer_anterior)
         self.ui.camdsupBut.clicked.connect(self.layer_seguinte)
         self.ui.chkIsolate.toggled.connect(self._toggle_isolate)
+        self.ui.chkAutoLayer.toggled.connect(self._toggle_auto_layer)
 
         # Modo
         self.ui.camadasRadio.toggled.connect(self.modo_camadas)
@@ -273,8 +279,19 @@ class editor_grafico(QDialog):
         if lbl:
             lbl.setText(t["label_dm"])
 
-        # Cor de fundo do viewer
+        # Cor de fundo do viewer e flag de tema
         self.viewer.color_background = t["viewer_bg"]
+        self.viewer.dark_mode = dark
+        if dark:
+            self.viewer.color_extrude_old = QColor( 20,  50, 110)
+            self.viewer.color_travel_old  = QColor(100,  25,  25)
+            self.viewer.color_extrude_dim = QColor( 15,  38,  85)
+            self.viewer.color_travel_dim  = QColor( 80,  20,  20)
+        else:
+            self.viewer.color_extrude_old = QColor(175, 205, 255)
+            self.viewer.color_travel_old  = QColor(255, 160, 160)
+            self.viewer.color_extrude_dim = QColor(205, 225, 255)
+            self.viewer.color_travel_dim  = QColor(255, 190, 190)
         self.viewer._dirty = True
 
         # Atualiza cor de acento dos labels de camada/linha
@@ -336,32 +353,61 @@ class editor_grafico(QDialog):
     # Simulacao
     # ────────────────────────────────────────────────────────────────────────
 
+    # -- helpers de estado dos botoes -----------------------------------------
+
+    def _reset_playbut(self):
+        """Coloca playbut no estado parado (playbut -> iniciar_simulacao)."""
+        self.ui.playbut.setText("▶▶")
+        try:
+            self.ui.playbut.clicked.disconnect()
+        except TypeError:
+            pass
+        self.ui.playbut.clicked.connect(self.iniciar_simulacao)
+
+    def _reset_voltarbut(self):
+        """Coloca voltarbut no estado parado (voltarbut -> retroceder_simulacao)."""
+        self.ui.voltarbut.setText("◀◀")
+        try:
+            self.ui.voltarbut.clicked.disconnect()
+        except TypeError:
+            pass
+        self.ui.voltarbut.clicked.connect(self.retroceder_simulacao)
+
+    # -- acoes de simulacao ---------------------------------------------------
+
     def iniciar_simulacao(self):
         if self.model is None:
             return
         self.viewer.iniciar_simulacao()
+        self._reset_voltarbut()   # sincroniza voltarbut se estava em modo reverso
         self.ui.playbut.setText("⏸")
         self.ui.playbut.clicked.disconnect()
         self.ui.playbut.clicked.connect(self._pausar_simulacao)
 
     def _pausar_simulacao(self):
         self.viewer.parar_simulacao()
-        self.ui.playbut.setText("▶")
-        self.ui.playbut.clicked.disconnect()
-        self.ui.playbut.clicked.connect(self.iniciar_simulacao)
+        self._reset_playbut()
 
     def parar_simulacao(self):
         self.viewer.resetar_simulacao()
-        self.ui.playbut.setText("▶")
-        try:
-            self.ui.playbut.clicked.disconnect()
-        except TypeError:
-            pass
-        self.ui.playbut.clicked.connect(self.iniciar_simulacao)
+        self._reset_playbut()
+        self._reset_voltarbut()
         self.ui.lbl_current_line.setText("Linha: —")
 
     def retroceder_simulacao(self):
+        """Inicia simulacao reversa — espelho exato do iniciar_simulacao."""
+        if self.model is None:
+            return
         self.viewer.retroceder_simulacao()
+        self._reset_playbut()   # sincroniza playbut se estava em modo forward
+        self.ui.voltarbut.setText("⏸")
+        self.ui.voltarbut.clicked.disconnect()
+        self.ui.voltarbut.clicked.connect(self._pausar_reverso)
+
+    def _pausar_reverso(self):
+        """Pausa a simulacao reversa — espelho exato do _pausar_simulacao."""
+        self.viewer.parar_reverso()
+        self._reset_voltarbut()
 
     def proxima_linha(self):
         if self.model is None:
@@ -394,9 +440,19 @@ class editor_grafico(QDialog):
             self.ui.codigo.setTextCursor(cursor)
             self.ui.codigo.ensureCursorVisible()
 
+    def _on_layer_changed(self, layer_index: int):
+        """Chamado pelo viewer quando auto-camada detecta mudanca de Z."""
+        self._update_layer_label()
+
     # ────────────────────────────────────────────────────────────────────────
     # Camadas
     # ────────────────────────────────────────────────────────────────────────
+
+    def _toggle_auto_layer(self, checked: bool):
+        self.viewer.auto_layer = checked
+        # Auto-camada so faz sentido no modo camadas
+        if checked and self.ui.objetoRadio.isChecked():
+            self.ui.camadasRadio.setChecked(True)
 
     def layer_anterior(self):
         if self.model is None:
@@ -439,6 +495,7 @@ class editor_grafico(QDialog):
         self.ui.camdinfBut.setEnabled(True)
         self.ui.camdsupBut.setEnabled(True)
         self.ui.chkIsolate.setEnabled(True)
+        self.ui.chkAutoLayer.setEnabled(True)
         self._update_layer_label()
 
     def modo_objeto(self, checked):
@@ -448,6 +505,7 @@ class editor_grafico(QDialog):
         self.ui.camdinfBut.setEnabled(False)
         self.ui.camdsupBut.setEnabled(False)
         self.ui.chkIsolate.setEnabled(False)
+        self.ui.chkAutoLayer.setEnabled(False)
         self._update_layer_label()
 
     # ────────────────────────────────────────────────────────────────────────
@@ -473,6 +531,7 @@ class editor_grafico(QDialog):
         self.ui.camdinfBut.setEnabled(enabled and in_layer)
         self.ui.camdsupBut.setEnabled(enabled and in_layer)
         self.ui.chkIsolate.setEnabled(enabled and in_layer)
+        self.ui.chkAutoLayer.setEnabled(enabled and in_layer)
 
     def _update_info(self):
         if self.model is None:

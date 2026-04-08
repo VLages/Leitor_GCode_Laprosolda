@@ -31,7 +31,7 @@ class ToggleSwitch(QtWidgets.QAbstractButton):
         p.setRenderHint(QtGui.QPainter.Antialiasing)
         w, h = self.width(), self.height()
         # Track
-        track_color = QtGui.QColor(255, 140, 0) if self.isChecked() else QtGui.QColor(80, 80, 100)
+        track_color = QtGui.QColor(34, 103, 252) if self.isChecked() else QtGui.QColor(80, 80, 100)
         p.setBrush(QtGui.QBrush(track_color))
         p.setPen(QtCore.Qt.NoPen)
         p.drawRoundedRect(0, 0, w, h, h//2, h//2)
@@ -53,14 +53,23 @@ class Ui_editor_grafico(object):
             " QGroupBox::title { subcontrol-origin: margin; left: 8px; }"
         )
 
-        # Layout principal: coluna esquerda + viewport + controles inferiores
-        self.gridLayout_main = QtWidgets.QGridLayout(Dialog)
-        self.gridLayout_main.setContentsMargins(6, 6, 6, 6)
-        self.gridLayout_main.setSpacing(4)
+        # Layout principal com splitters redimensionaveis
+        root_layout = QtWidgets.QVBoxLayout(Dialog)
+        root_layout.setContentsMargins(6, 6, 6, 6)
+        root_layout.setSpacing(0)
+
+        # Splitter horizontal: painel esquerdo | area direita
+        self.splitter_h = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter_h.setHandleWidth(5)
+        self.splitter_h.setChildrenCollapsible(False)
+
+        # Splitter vertical: viewer | controles inferiores
+        self.splitter_v = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.splitter_v.setHandleWidth(5)
+        self.splitter_v.setChildrenCollapsible(False)
 
         # ── Painel esquerdo ────────────────────────────────────────────────
         self.panel_left = QtWidgets.QWidget()
-        self.panel_left.setFixedWidth(228)
         left_layout = QtWidgets.QVBoxLayout(self.panel_left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(4)
@@ -69,7 +78,7 @@ class Ui_editor_grafico(object):
         header_row = QtWidgets.QHBoxLayout()
         col_title = QtWidgets.QVBoxLayout()
         lbl_title = QtWidgets.QLabel("LEITOR GCODE")
-        lbl_title.setStyleSheet("color: #ff8c00; font-size: 13px; font-weight: bold; letter-spacing: 2px;")
+        lbl_title.setStyleSheet("color: #2267fc; font-size: 13px; font-weight: bold; letter-spacing: 2px;")
         lbl_sub   = QtWidgets.QLabel("Laprosolda")
         lbl_sub.setStyleSheet("color: #555566; font-size: 10px; letter-spacing: 1px;")
         col_title.addWidget(lbl_title)
@@ -121,16 +130,18 @@ class Ui_editor_grafico(object):
         self.lbl_info.setStyleSheet("color: #555566; font-size: 10px; padding: 4px 0;")
         left_layout.addWidget(self.lbl_info)
 
-        self.gridLayout_main.addWidget(self.panel_left, 0, 0, 2, 1)
+        self.splitter_h.addWidget(self.panel_left)
 
-        # ── Viewport ───────────────────────────────────────────────────────
-        self.grafico = QtWidgets.QGraphicsView(Dialog)
+        # ── Viewport (substituido pelo GCodeViewer3D em main.py) ─────────
+        self.grafico = QtWidgets.QWidget(Dialog)
         self.grafico.setObjectName("grafico")
-        self.gridLayout_main.addWidget(self.grafico, 0, 1, 1, 1)
+        self.grafico.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self.splitter_v.addWidget(self.grafico)
 
         # ── Barra inferior ─────────────────────────────────────────────────
         self.panel_controls = QtWidgets.QWidget()
-        self.panel_controls.setFixedHeight(95)
+        self.panel_controls.setMinimumHeight(95)
         ctrl = QtWidgets.QGridLayout(self.panel_controls)
         ctrl.setContentsMargins(4, 4, 4, 4)
         ctrl.setSpacing(4)
@@ -157,7 +168,7 @@ class Ui_editor_grafico(object):
         self.camdinfBut = QtWidgets.QPushButton("◀"); self.camdinfBut.setFixedWidth(32)
         self.lbl_layer  = QtWidgets.QLabel("—")
         self.lbl_layer.setAlignment(QtCore.Qt.AlignCenter)
-        self.lbl_layer.setStyleSheet("color: #ff8c00; font-size: 13px; min-width: 44px;")
+        self.lbl_layer.setStyleSheet("color: #2267fc; font-size: 13px; min-width: 44px;")
         self.camdsupBut = QtWidgets.QPushButton("▶"); self.camdsupBut.setFixedWidth(32)
         layer_row.addWidget(self.camdinfBut)
         layer_row.addWidget(self.lbl_layer)
@@ -166,6 +177,10 @@ class Ui_editor_grafico(object):
         self.chkIsolate = QtWidgets.QCheckBox("Isolar camada")
         self.chkIsolate.setStyleSheet("font-size: 10px;")
         layer_lay.addWidget(self.chkIsolate)
+        self.chkAutoLayer = QtWidgets.QCheckBox("Auto-camada")
+        self.chkAutoLayer.setStyleSheet("font-size: 10px;")
+        self.chkAutoLayer.setEnabled(False)
+        layer_lay.addWidget(self.chkAutoLayer)
         ctrl.addWidget(grp_layer, 0, 1, 2, 1)
 
         # Playback
@@ -176,11 +191,17 @@ class Ui_editor_grafico(object):
         play_lay.setSpacing(4)
         self.voltarbut    = QtWidgets.QPushButton("◀◀"); self.voltarbut.setFixedWidth(36)
         self.stopbut      = QtWidgets.QPushButton("■");  self.stopbut.setFixedWidth(36)
-        self.playbut      = QtWidgets.QPushButton("▶");  self.playbut.setFixedWidth(36)
+        self.playbut      = QtWidgets.QPushButton("▶▶");  self.playbut.setFixedWidth(36)
         self.prev_linebut = QtWidgets.QPushButton("◀");  self.prev_linebut.setFixedWidth(32)
         self.next_linebut = QtWidgets.QPushButton("▶");  self.next_linebut.setFixedWidth(32)
-        self.playbut.setStyleSheet("QPushButton { color: #ff8c00; font-size: 14px; }"
-                                   "QPushButton:pressed { background: #ff8c00; color: #16161f; }")
+        _play_style = ("QPushButton { color: #2267fc; font-size: 14px; border-color: #1a3a6a; }"
+                       "QPushButton:hover { border-color: #2267fc; }"
+                       "QPushButton:pressed { background: #2267fc; color: #16161f; }")
+        self.playbut.setStyleSheet(_play_style)
+        self.voltarbut.setStyleSheet(_play_style)
+        self.stopbut.setStyleSheet("QPushButton { color: #dc3c3c; font-size: 14px; border-color: #5a1a1a; }"
+                                   "QPushButton:hover { border-color: #dc3c3c }"
+                                   "QPushButton:pressed { background: #dc3c3c; color: #16161f; }")
         sep_v = QtWidgets.QFrame(); sep_v.setFrameShape(QtWidgets.QFrame.VLine)
         for w in (self.voltarbut, self.stopbut, self.playbut, sep_v,
                   self.prev_linebut, self.next_linebut):
@@ -208,7 +229,15 @@ class Ui_editor_grafico(object):
         self.lbl_current_line.setStyleSheet("color: #8888a0; font-size: 10px;")
         ctrl.addWidget(self.lbl_current_line, 1, 4, 1, 1)
 
-        self.gridLayout_main.addWidget(self.panel_controls, 1, 1, 1, 1)
+        self.splitter_v.addWidget(self.panel_controls)
+
+        # Montar splitters no layout raiz
+        self.splitter_h.addWidget(self.splitter_v)
+        self.splitter_h.setStretchFactor(0, 0)   # painel esquerdo nao estica
+        self.splitter_h.setStretchFactor(1, 1)   # area direita estica
+        self.splitter_v.setStretchFactor(0, 1)   # viewer estica
+        self.splitter_v.setStretchFactor(1, 0)   # controles nao esticam
+        root_layout.addWidget(self.splitter_h)
 
         self.retranslateUi(Dialog)
 

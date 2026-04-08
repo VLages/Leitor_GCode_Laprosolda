@@ -31,3 +31,24 @@ Hoje consegui avançar de forma significativa no desenvolvimento do software. Co
 A interação do usuário com o ambiente ainda se encontra em estágio inicial. Nos próximos dias, pretendo focar na melhoria da eficiência e na fluidez dos movimentos, tornando a manipulação do objeto renderizado mais responsiva.
 
 Destaca-se também a otimização do código, que permitiu alcançar altas taxas de quadros na renderização, chegando a aproximadamente 100 frames per second (FPS) no meu computador.
+
+## Dia 4
+
+Segue a lista de tópicos que realizei hoje
+
+- Fiz o upload da nova versão "finalizada" pela inteligencia artificial 
+- Removi a opção de mudar as cores de fundo do programa junto com o seu sistema de cache
+- Removi a inercia que fazia a peça se mover depois de soltar o botão esquerdo do mouse
+- Alterei as cores para azul e vermlho, sendo elas permanentes sem possibilidade de serem alteradas (o azul foi escolhido para representar o Laprosolda e o vermelho para gerar o contraste das linhas G1 e G0)
+- Adicionei um novo botão "Auto-camadas" que quando ativado ira mudar automaticamente as camadas enquanto o código estiver rodando
+- Agora o boltão de voltar realmente le o código de trás pra frente em vez de apenas voltar uma linha do código
+- Foi Adicionado um slider entre os botões de multi-uso e o viewer, e um outro slider entre o editor de texto GCode e o viewer, podendo controlar melhor o tamanho da renderização.
+
+Segue a Lista dos tópicos que precisam ser realizados:
+
+- Concertar a leitura do do código (nem sempre todo GCode começa com z = 0)
+- Implementar a função de rodar o código apartir da linha selecionada
+- Colocar matriz ajustavel para rerpesentar a bancada de trabalho
+- Mostrar a ponta da tocha na renderização da peça
+- Implementar a função de ter um substrato e fixadores costumisaveis (Baixa prioridade os fixadores)
+- Implementar cubo de visualização das fazes arestas e quinas apenas por clicks (Igual dos outros softwares de CAD)

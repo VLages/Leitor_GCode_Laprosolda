@@ -120,45 +120,9 @@ class AxisWidget(QWidget):
                 best, best_d = name, d
         return best
 
-    def mouseMoveEvent(self, event):
-        prev = self._hovered
-        self._hovered = self._axis_at(event.pos())
-        if self._hovered != prev:
-            self.update()
-
     def leaveEvent(self, event):
         self._hovered = None
         self.update()
-
-    def mousePressEvent(self, event):
-        if event.button() != Qt.LeftButton:
-            return
-        name = self._axis_at(event.pos())
-        if name is None:
-            return
-        self._align_to_axis(name)
-
-    def _align_to_axis(self, axis_name):
-        """
-        Alinha a camera para olhar ao longo do eixo oposto ao clicado
-        (similar ao comportamento do nc-viewer e SolidWorks).
-        """
-        v = self.viewer
-        targets = {
-            'X': (np.array([1,0,0]), np.array([0,0,1])),  # olha de +X, up=Z
-            'Y': (np.array([0,1,0]), np.array([0,0,1])),  # olha de +Y, up=Z
-            'Z': (np.array([0,0,1]), np.array([0,1,0])),  # olha de +Z, up=Y
-        }
-        fwd_inv, up_vec = targets[axis_name]
-        right = np.cross(up_vec, fwd_inv)
-        right = right / (np.linalg.norm(right) + 1e-10)
-        up2   = np.cross(fwd_inv, right)
-        v._rot = np.array([right, up2, fwd_inv])
-        v._rot = v._orthonormalize(v._rot)
-        v._update_camera()
-        v._dirty = True
-        self.update()
-
 
 class GCodeViewer3D(QWidget):
     def __init__(self, parent=None):
@@ -184,6 +148,7 @@ class GCodeViewer3D(QWidget):
 
         # Callbacks
         self.on_segment_changed = None
+        self.on_layer_changed   = None  # callback(layer_index) para auto-camada
 
         # ── Camera orbital ───────────────────────────────────────────────────
         self._target     = np.array([0.0, 0.0, 0.0])
@@ -193,9 +158,6 @@ class GCodeViewer3D(QWidget):
         self._rot        = self._make_initial_rotation()
 
         # ── Inercia ──────────────────────────────────────────────────────────
-        self._vel_dx  = 0.0
-        self._vel_dy  = 0.0
-        self._INERTIA = 0.88
         self._dragging = False
 
         # ── Mouse ────────────────────────────────────────────────────────────
@@ -213,10 +175,25 @@ class GCodeViewer3D(QWidget):
         self._sim_speed_ms = 50
         self._sim_running  = False
 
+        # Simulacao reversa
+        self._rev_timer   = QTimer(self)
+        self._rev_timer.timeout.connect(self._rev_step)
+        self._rev_running = False
+
+        # Acompanhamento automatico de camada
+        self.auto_layer   = False
+
         # ── Cores (alteradas por tema/config) ────────────────────────────────
         self.show_travel      = True
-        self.color_travel     = QColor(60, 60, 180)
-        self.color_extrude    = QColor(255, 140, 0)
+        self.dark_mode        = True
+        self.color_travel     = QColor(220, 60, 60)    # vermelho G0
+        self.color_extrude    = QColor(34, 103, 252)   # azul G1 (#2267fc)
+
+        # Cores das linhas ainda nao lidas (pendentes/apagadas) — ajustadas por tema
+        self.color_extrude_dim  = QColor(15, 38, 85)    # G1 pendente (padrao dark)
+        self.color_travel_dim   = QColor(80, 20, 20)    # G0 pendente (padrao dark)
+        self.color_extrude_old  = QColor(20, 50, 110)   # G1 camada inferior (padrao dark)
+        self.color_travel_old   = QColor(100, 25, 25)   # G0 camada inferior (padrao dark)
         self.color_background = QColor(22, 22, 32)
 
         self.setFocusPolicy(Qt.StrongFocus)
@@ -342,6 +319,8 @@ class GCodeViewer3D(QWidget):
     def iniciar_simulacao(self):
         if self.model is None:
             return
+        self._rev_running = False
+        self._rev_timer.stop()
         if self._sim_index < 0:
             self._sim_index = 0
         self._sim_running = True
@@ -351,15 +330,36 @@ class GCodeViewer3D(QWidget):
         self._sim_running = False
         self._sim_timer.stop()
 
-    def retroceder_simulacao(self):
+    def iniciar_reverso(self):
+        """Inicia simulacao reversa a partir do indice atual."""
+        if self.model is None:
+            return
         self.parar_simulacao()
+        if self._sim_index < 0:
+            self._sim_index = len(self.model.segments) - 1
+        self._rev_running = True
+        self._rev_timer.start(self._sim_speed_ms)
+
+    def parar_reverso(self):
+        self._rev_running = False
+        self._rev_timer.stop()
+
+    def retroceder_simulacao(self):
+        """Volta uma linha e inicia simulacao reversa a partir dali."""
+        self.parar_simulacao()
+        self.parar_reverso()
         if self._sim_index > 0:
             self._sim_index -= 1
+        elif self._sim_index < 0 and self.model:
+            self._sim_index = len(self.model.segments) - 1
         self._notify_segment()
         self._dirty = True
+        self._rev_running = True
+        self._rev_timer.start(self._sim_speed_ms)
 
     def resetar_simulacao(self):
         self.parar_simulacao()
+        self.parar_reverso()
         self._sim_index = -1
         self._dirty = True
 
@@ -367,6 +367,8 @@ class GCodeViewer3D(QWidget):
         self._sim_speed_ms = max(1, ms)
         if self._sim_running:
             self._sim_timer.setInterval(self._sim_speed_ms)
+        if self._rev_running:
+            self._rev_timer.setInterval(self._sim_speed_ms)
 
     def _sim_step(self):
         if self.model is None:
@@ -381,9 +383,28 @@ class GCodeViewer3D(QWidget):
         self._notify_segment()
         self._dirty = True
 
+    def _rev_step(self):
+        """Passo da simulacao reversa."""
+        if self.model is None:
+            self.parar_reverso()
+            return
+        if self._sim_index <= 0:
+            self.parar_reverso()
+            self._sim_index = 0
+        else:
+            self._sim_index -= 1
+        self._notify_segment()
+        self._dirty = True
+
     def _notify_segment(self):
         if self.on_segment_changed and self.model and 0 <= self._sim_index < len(self.model.segments):
             seg = self.model.segments[self._sim_index]
+            # Auto-camada: troca de layer ao detectar mudanca de Z
+            if self.auto_layer and self.current_layer >= 0:
+                if seg.layer != self.current_layer:
+                    self.current_layer = seg.layer
+                    if self.on_layer_changed:
+                        self.on_layer_changed(self.current_layer)
             self.on_segment_changed(seg)
 
     # ────────────────────────────────────────────────────────────────────────
@@ -480,13 +501,6 @@ class GCodeViewer3D(QWidget):
     # ────────────────────────────────────────────────────────────────────────
 
     def _on_timer(self):
-        if not self._dragging and (abs(self._vel_dx) > 0.05 or abs(self._vel_dy) > 0.05):
-            self._trackball_rotate(self._vel_dx, self._vel_dy)
-            self._vel_dx *= self._INERTIA
-            self._vel_dy *= self._INERTIA
-            self._update_camera()
-            self._dirty = True
-
         if self._dirty:
             self.update()
             self._dirty = False
@@ -574,15 +588,15 @@ class GCodeViewer3D(QWidget):
         # Camadas inferiores apagadas (apenas quando nao isolado)
         if self.current_layer >= 0 and not self.layer_isolated:
             older = self._layers_arr < self.current_layer
-            draw_group(older & extrude, QColor(80, 60, 30))
+            draw_group(older & extrude, self.color_extrude_old)
             if self.show_travel:
-                draw_group(older & travel, QColor(30, 30, 60))
+                draw_group(older & travel, self.color_travel_old)
 
         # Pendentes da simulacao
         if self._sim_index >= 0:
-            draw_group(layer_mask & extrude & sim_pending, QColor(60, 45, 20))
+            draw_group(layer_mask & extrude & sim_pending, self.color_extrude_dim)
             if self.show_travel:
-                draw_group(layer_mask & travel & sim_pending, QColor(25, 25, 50))
+                draw_group(layer_mask & travel & sim_pending, self.color_travel_dim)
 
         # Completos
         if self.show_travel:
