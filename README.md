@@ -48,7 +48,7 @@ Segue a Lista dos tópicos que precisam ser realizados:
 
 - Concertar a leitura do do código (nem sempre todo GCode começa com z = 0)
 - Implementar a função de rodar o código apartir da linha selecionada
-- Colocar matriz ajustavel para rerpesentar a bancada de trabalho
+- Colocar matriz ajustavel para rerpesentar a bancada de trabalho (consequentemente ajustar o recentralizar) 
 - Mostrar a ponta da tocha na renderização da peça
 - Implementar a função de ter um substrato e fixadores costumisaveis (Baixa prioridade os fixadores)
 - Implementar cubo de visualização das fazes arestas e quinas apenas por clicks (Igual dos outros softwares de CAD)
