@@ -198,6 +198,7 @@ class editor_grafico(QDialog):
         super().__init__(*args, **kwargs)
         self.ui = Ui_editor_grafico()
         self.ui.setupUi(self)
+        self._selected_line = 1
 
         self.setWindowFlags(
             Qt.Window |
@@ -345,6 +346,8 @@ class editor_grafico(QDialog):
     def _on_code_cursor_changed(self):
         cursor = self.ui.codigo.textCursor()
         line   = cursor.blockNumber() + 1   # 1-based
+        self._selected_line = line 
+
         self.ui.lbl_current_line.setText(f"Linha: {line}")
         if self.model is not None:
             self.viewer.highlight_line(line)
@@ -378,6 +381,10 @@ class editor_grafico(QDialog):
     def iniciar_simulacao(self):
         if self.model is None:
             return
+        
+        if hasattr(self, "_selected_line"):
+            self.viewer.set_simulation_from_line(self._selected_line)
+
         self.viewer.iniciar_simulacao()
         self._reset_voltarbut()   # sincroniza voltarbut se estava em modo reverso
         self.ui.playbut.setText("⏸")
@@ -398,7 +405,11 @@ class editor_grafico(QDialog):
         """Inicia simulacao reversa — espelho exato do iniciar_simulacao."""
         if self.model is None:
             return
-        self.viewer.retroceder_simulacao()
+        
+        if hasattr(self, "_selected_line"):
+            self.viewer.set_simulation_from_line(self._selected_line)
+
+        self.viewer.iniciar_reverso()
         self._reset_playbut()   # sincroniza playbut se estava em modo forward
         self.ui.voltarbut.setText("⏸")
         self.ui.voltarbut.clicked.disconnect()

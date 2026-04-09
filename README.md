@@ -46,9 +46,15 @@ Segue a lista de tópicos que realizei hoje
 
 Segue a Lista dos tópicos que precisam ser realizados:
 
-- Concertar a leitura do do código (nem sempre todo GCode começa com z = 0)
-- Implementar a função de rodar o código apartir da linha selecionada
+- Concertar a leitura do código (nem sempre todo GCode começa com z = 0)
 - Colocar matriz ajustavel para rerpesentar a bancada de trabalho (consequentemente ajustar o recentralizar) 
 - Mostrar a ponta da tocha na renderização da peça
 - Implementar a função de ter um substrato e fixadores costumisaveis (Baixa prioridade os fixadores)
 - Implementar cubo de visualização das fazes arestas e quinas apenas por clicks (Igual dos outros softwares de CAD)
+
+## Dia 5
+
+Feitos desse dia:
+
+- Agora a simulaçao pode ser rodada de qualquer linha do código, apenas selecione com o mouse a linha desejada e apertar os botões de play ou de retroceder
+- Tentei realizar a implementação de um viewcube assim como outros programas de CAS possuem, porém estava dando muitos erros e deixei para ser implementado outro dia

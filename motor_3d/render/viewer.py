@@ -705,3 +705,25 @@ class GCodeViewer3D(QWidget):
         if changed:
             self._update_camera()
             self._dirty = True
+
+    def set_simulation_from_line(self, line_number: int):
+        """
+        Define o ponto inicial da simulação baseado na linha do GCode.
+        """
+        if self._line_nums is None:
+            return
+
+        matches = np.where(self._line_nums == line_number)[0]
+
+        if len(matches) > 0:
+            self._sim_index = int(matches[0])
+        else:
+            # pega o mais próximo anterior
+            candidates = np.where(self._line_nums <= line_number)[0]
+            if len(candidates) > 0:
+                self._sim_index = int(candidates[-1])
+            else:
+                self._sim_index = 0
+
+        self._notify_segment()
+        self._dirty = True
