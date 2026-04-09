@@ -15,6 +15,7 @@ class GCodeModel:
     """Contem todos os segmentos parseados e metadados do arquivo GCode."""
     def __init__(self):
         self.segments = []    # lista de GCodeSegment
+        self.grid_segments = []
         self.layers   = {}    # dict: layer_index (int) -> [GCodeSegment, ...]
         self.bounds   = None  # (xmin, ymin, zmin, xmax, ymax, zmax)
 

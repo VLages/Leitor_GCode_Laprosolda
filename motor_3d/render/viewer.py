@@ -263,6 +263,7 @@ class GCodeViewer3D(QWidget):
 
     def _precompute_geometry(self):
         segs = self.model.segments
+        grid = self.model.grid_segments
         if not segs:
             return
         starts = np.array([s.start for s in segs], dtype=np.float64)
@@ -273,6 +274,12 @@ class GCodeViewer3D(QWidget):
         self._types       = np.array([0 if s.type == 'travel' else 1 for s in segs])
         self._layers_arr  = np.array([s.layer for s in segs])
         self._line_nums   = np.array([s.line_number for s in segs])
+        if grid:
+            g_starts = np.array([s.start for s in grid], dtype=np.float64)
+            g_ends   = np.array([s.end   for s in grid], dtype=np.float64)
+            g_ones   = np.ones((len(grid), 1), dtype=np.float64)
+            self._grid_v_start = np.hstack([g_starts, g_ones])
+            self._grid_v_end   = np.hstack([g_ends, g_ones])
 
     def _fit_view(self):
         if self.model is None or self.model.bounds is None:
@@ -536,15 +543,42 @@ class GCodeViewer3D(QWidget):
         cam_mat  = self.camera.camera_matrix()
         proj_mat = self.projection.projection_matrix
         scr_mat  = self.projection.to_screen_matrix
-        v = verts @ cam_mat @ proj_mat
+        v_cam = verts @ cam_mat
+        v = v_cam @ proj_mat
         w = v[:, -1:].copy()
         w[np.abs(w) < 1e-6] = 1e-6
         v = v / w
-        valid = ~np.any((v > 2) | (v < -2), axis=1)
+        z_depth = np.abs(v_cam[:, 2]) 
+        valid = z_depth > self.camera.near_plane
         v = v @ scr_mat
         return v[:, :2].astype(np.int32), valid
 
     def _draw_segments_batched(self, painter: QPainter):
+        # --- DESENHO DA GRADE DA BANCADA ---
+        if hasattr(self, '_grid_v_start'):
+            g_pts0, g_valid0 = self._project_batch(self._grid_v_start)
+            g_pts1, g_valid1 = self._project_batch(self._grid_v_end)
+            g_valid = g_valid0 & g_valid1
+            
+            # Lógica de cores aprimorada para visibilidade
+            if self.dark_mode:
+                # No modo escuro: Linhas contínuas e mais claras (cinza azulado suave)
+                grid_color = QColor(100, 100, 120, 150) # Aumentamos a opacidade e brilho
+            else:
+                # No modo claro: Linhas contínuas e mais escuras (contraste com fundo branco/claro)
+                grid_color = QColor(160, 160, 180, 200) 
+            
+            # Configuração da caneta: Qt.SolidLine para linha contínua
+            pen = QPen(grid_color, 1, Qt.SolidLine)
+            painter.setPen(pen)
+        
+        for i in range(len(self._grid_v_start)):
+            if g_valid[i]:
+                painter.drawLine(
+                    int(g_pts0[i,0]), int(g_pts0[i,1]), 
+                    int(g_pts1[i,0]), int(g_pts1[i,1])
+                )
+
         if self._verts_start is None:
             return
 

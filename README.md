@@ -46,15 +46,17 @@ Segue a lista de tópicos que realizei hoje
 
 Segue a Lista dos tópicos que precisam ser realizados:
 
-- Concertar a leitura do código (nem sempre todo GCode começa com z = 0)
-- Colocar matriz ajustavel para rerpesentar a bancada de trabalho (consequentemente ajustar o recentralizar) 
 - Mostrar a ponta da tocha na renderização da peça
 - Implementar a função de ter um substrato e fixadores costumisaveis (Baixa prioridade os fixadores)
-- Implementar cubo de visualização das fazes arestas e quinas apenas por clicks (Igual dos outros softwares de CAD)
+- Implementar cubo de visualização das fases arestas e quinas apenas por clicks (Igual dos outros softwares de CAD)
+- Ajustar posição da camera ao abrir um código 
 
 ## Dia 5
 
 Feitos desse dia:
 
 - Agora a simulaçao pode ser rodada de qualquer linha do código, apenas selecione com o mouse a linha desejada e apertar os botões de play ou de retroceder
+> Nota: Descobri que o principal erro não era exatamente o programa ler sempre do z = 0 mas sim não conseguir identificar GCodes com um 0 seguido do número definido (por exemplo, não era possível ler linhas como G00, G01 ou G04, agora isso é possível)
 - Tentei realizar a implementação de um viewcube assim como outros programas de CAS possuem, porém estava dando muitos erros e deixei para ser implementado outro dia
+- O problema de leitura foi concertado, agora GCodes com z diferente de 0 podem ser lidos normalmente (pelo menos não apresentaram nenhum defeito os modelos enviados à mim)
+- A matriz que representa a banca de trabalho foi colocada no [0,0,0] da área de trabalho com um valor fixo provisório de 500 x 500 mm (Ainda falta concertar bug - linhas do grid crescem infinitamente dependendo do angulo da camera)

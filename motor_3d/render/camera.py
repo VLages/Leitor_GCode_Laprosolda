@@ -19,8 +19,8 @@ class Camera:
         self.h_fov = math.pi / 3
         self.v_fov = self.h_fov * (height / width)
 
-        self.near_plane  = 0.1
-        self.far_plane   = 5000
+        self.near_plane  = 0.01
+        self.far_plane   = 10000
 
     def camera_matrix(self):
         # Usa diretamente os vetores definidos pelo viewer.
