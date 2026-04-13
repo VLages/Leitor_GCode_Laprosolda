@@ -1,6 +1,9 @@
 import re
 from .gcode_model import GCodeSegment, GCodeModel
 
+PATTERN_CMD = re.compile(r'^([A-Z])0*(\d+)$')
+PATTERN_PARAMS = re.compile(r'([A-Z])([-+]?\d*\.?\d+)')
+
 class ParsedCommand:
     """Resultado do parse de uma unica linha de GCode."""
     def __init__(self, code, params):
@@ -121,10 +124,8 @@ class GCodeParser:
 
         tokens = line.upper().split()
         first_token = tokens[0]
-        
-        # 1. Normalização de comandos (G00 -> G0, G01 -> G1)
-        # Usamos regex para capturar a letra e o número, ignorando zeros à esquerda
-        match_cmd = re.match(r'^([A-Z])0*(\d+)$', first_token)
+       
+        match_cmd = PATTERN_CMD.match(first_token)
         
         if match_cmd:
             code = f"{match_cmd.group(1)}{match_cmd.group(2)}"
@@ -139,12 +140,10 @@ class GCodeParser:
             start_idx = 1
 
         params = {}
-        # RegEx aprimorado para capturar Letra + Número (incluindo sinais e pontos)
-        pattern = re.compile(r'([A-Z])([-+]?\d*\.?\d+)')
-        
-        # Processa os tokens de parâmetros
         text_to_parse = " ".join(tokens[start_idx:])
-        for m in pattern.finditer(text_to_parse):
+        
+        # Usa a constante pré-compilada
+        for m in PATTERN_PARAMS.finditer(text_to_parse):
             params[m.group(1)] = float(m.group(2))
 
         return ParsedCommand(code, params)

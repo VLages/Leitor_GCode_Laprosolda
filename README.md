@@ -66,3 +66,4 @@ Feitos desse dia:
 - Foi implementado a redenrização de um cilindro que representa a ponta da tocha em escala realista (40 mm de comprimento com ponta cônica)
 - Agora toda vez ao abrir um GCode novo, a opção de ver objeto completo vai estar selecionada
 - Posição inicial da câmera ajustada
+- A movimentação da câmera foi ajustada, deixou de ser uma movimentação primitiva agora parece uma movimentação profissional de um programa de CAD. (Porém após essa implementação o programa pareceu ficar mais travado o renderizar maiores quantidades de linhas. Mas vizualizando a peça por camadas, o programa deixa de ficar travado)

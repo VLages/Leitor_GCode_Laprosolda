@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QColor, QPen, QCursor, QFont, QBrush
-from PyQt5.QtCore import Qt, QTimer, QPoint, QRect
+from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QLine
 import numpy as np
 import math
 from .camera import Camera
@@ -704,9 +704,12 @@ class GCodeViewer3D(QWidget):
             if not np.any(m):
                 return
             painter.setPen(QPen(color, width))
-            for i in np.where(m)[0]:
-                painter.drawLine(int(pts0[i,0]), int(pts0[i,1]),
-                                 int(pts1[i,0]), int(pts1[i,1]))
+            indices = np.where(m)[0]
+            lines = [
+                QLine(int(pts0[i,0]), int(pts0[i,1]), int(pts1[i,0]), int(pts1[i,1])) 
+                for i in indices
+            ]
+            painter.drawLines(lines)
 
         extrude = self._types == 1
         travel  = self._types == 0

@@ -344,6 +344,7 @@ class editor_grafico(QDialog):
         self.current_file_path = path
         try:
             self.model = self.parser.parse(path, self.grid_w, self.grid_d)
+            self.ui.codigo.setLineWrapMode(self.ui.codigo.NoWrap)
             with open(path, 'r', encoding='utf-8', errors='replace') as f:
                 self.ui.codigo.setPlainText(f.read())
             self.ui.objetoRadio.setChecked(True)
