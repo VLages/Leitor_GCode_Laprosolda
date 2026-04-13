@@ -163,6 +163,7 @@ class GCodeViewer3D(QWidget):
         # ── Mouse ────────────────────────────────────────────────────────────
         self._mouse_last   = QPoint()
         self._mouse_button = None
+        self._last_mouse_pos = None
 
         # ── Timers ───────────────────────────────────────────────────────────
         self._dirty = False
@@ -360,18 +361,29 @@ class GCodeViewer3D(QWidget):
             self._grid_v_end   = None
 
     def _fit_view(self):
-        if self.model is None or self.model.bounds is None:
-            return
-        xmin, ymin, zmin, xmax, ymax, zmax = self.model.bounds
-        self._target = np.array([
-            (xmin + xmax) / 2,
-            (ymin + ymax) / 2,
-            (zmin + zmax) / 2,
-        ])
-        diagonal = math.sqrt((xmax-xmin)**2 + (ymax-ymin)**2 + (zmax-zmin)**2)
-        self._orbit_dist = max(diagonal * 1.5, 10.0)
-        self._rot = self._make_initial_rotation()
-        self._update_camera()
+        self.camera.yaw = math.radians(-45)
+        self.camera.pitch = math.radians(30)
+        if self.model is None or not self.model.bounds:
+            # Se não houver peça, foca no centro do grid de 500mm
+            self.camera.target = np.array([0.0, 0.0, 0.0])
+            self.camera.distance = 700.0
+        else:
+            # Foca no centro da peça (Cilindro no Laprosolda)
+            xmin, ymin, zmin, xmax, ymax, zmax = self.model.bounds
+            center = np.array([
+                (xmin + xmax) / 2,
+                (ymin + ymax) / 2,
+                (zmin + zmax) / 2
+            ])
+            self.camera.target = center
+            
+            # Calcula distância ideal baseada no tamanho da peça
+            size = max(xmax - xmin, ymax - ymin, zmax - zmin)
+            self.camera.distance = size * 2.5 # Margem de segurança
+
+        # MUITO IMPORTANTE: Sincroniza a posição após mudar o alvo/distância
+        self.camera.update_position()
+        self.update()
 
     # ────────────────────────────────────────────────────────────────────────
     # Highlight por linha de codigo
@@ -628,7 +640,10 @@ class GCodeViewer3D(QWidget):
         w[w < 1e-6] = 1e-6 
         v = v / w
         v = v @ scr_mat
-        return v[:, :2].astype(np.int32), valid
+        v_safe = np.nan_to_num(v[:, :2], nan=0.0, posinf=30000.0, neginf=-30000.0)
+        with np.errstate(invalid='ignore', over='ignore'):
+            v_int = np.clip(v_safe, -30000, 30000).astype(np.int32)
+        return v_int, valid
 
     def _draw_segments_batched(self, painter: QPainter):
         # --- DESENHO DA GRADE DA BANCADA ---
@@ -743,6 +758,8 @@ class GCodeViewer3D(QWidget):
     # ────────────────────────────────────────────────────────────────────────
 
     def mousePressEvent(self, event):
+        self._last_mouse_pos = event.pos()
+        super().mousePressEvent(event)
         self.setFocus()
         self._mouse_last   = event.pos()
         self._mouse_button = event.button()
@@ -756,36 +773,65 @@ class GCodeViewer3D(QWidget):
         self.setCursor(QCursor(Qt.ArrowCursor))
 
     def mouseMoveEvent(self, event):
-        if self._mouse_button is None or self.camera is None:
+        if self._last_mouse_pos is None:
+            self._last_mouse_pos = event.pos()
             return
-        dx = event.x() - self._mouse_last.x()
-        dy = event.y() - self._mouse_last.y()
-        self._mouse_last = event.pos()
+        if event.buttons() == Qt.NoButton:
+            return
 
-        if self._mouse_button == Qt.LeftButton:
-            self.setCursor(QCursor(Qt.SizeAllCursor))
-            self._trackball_rotate(dx, dy)
-            self._vel_dx = dx * 0.6
-            self._vel_dy = dy * 0.6
-        elif self._mouse_button == Qt.MiddleButton:
-            self.setCursor(QCursor(Qt.SizeAllCursor))
-            pan   = self._orbit_dist * 0.001
-            right = self.camera.right[:3]
-            up    = self.camera.up[:3]
-            self._target -= right * dx * pan
-            self._target += up    * dy * pan
+        dx = event.x() - self._last_mouse_pos.x()
+        dy = event.y() - self._last_mouse_pos.y()
+        
+        # Botão Esquerdo: Orbita (Gira ao redor do objeto)
+        if event.buttons() & Qt.LeftButton:
+            sensitivity = 0.005
+            self.camera.yaw += dx * sensitivity
+            self.camera.pitch -= dy * sensitivity # Invertido para ser intuitivo
+            
+            # Trava para não "dar a volta" por cima do objeto
+            limit = math.radians(89)
+            self.camera.pitch = max(-limit, min(limit, self.camera.pitch))
+            
+        # Botão Direito ou Meio: Pan (Move o Alvo)
+        elif event.buttons() & Qt.MidButton:
+            pan_sensitivity = self.camera.distance * 0.001
+            
+            # 1. Descobre a direção exata para onde a lente está olhando
+            forward = self.camera.target - self.camera.position[:3]
+            forward = forward / np.linalg.norm(forward)
+            
+            # 2. Usa Produto Vetorial (Cross Product) para achar a "Direita" e "Cima" da tela
+            world_up = np.array([0, 0, 1])
+            right = np.cross(world_up, forward)
+            
+            # Prevenção matemática caso olhe perfeitamente de cima para baixo
+            if np.linalg.norm(right) < 1e-6:
+                right = np.array([1, 0, 0])
+            else:
+                right = right / np.linalg.norm(right)
+                
+            screen_up = np.cross(forward, right)
+            screen_up = screen_up / np.linalg.norm(screen_up)
+            
+            # 3. Move o alvo usando apenas os eixos paralelos ao seu monitor
+            # Invertemos os sinais para dar o efeito mecânico de "agarrar e puxar" a peça
+            self.camera.target -= right * dx * pan_sensitivity
+            self.camera.target += screen_up * dy * pan_sensitivity
 
-        self._update_camera()
-        self._dirty = True
+        self.camera.update_position()
+        self._last_mouse_pos = event.pos()
+        self.update()
 
     def wheelEvent(self, event):
-        if self.camera is None:
-            return
-        factor = 0.1 if event.angleDelta().y() > 0 else -0.1
-        self._orbit_dist *= (1.0 - factor)
-        self._orbit_dist  = max(self._MIN_DIST, min(self._MAX_DIST, self._orbit_dist))
-        self._update_camera()
-        self._dirty = True
+        # Scroll: Zoom (Altera a distância orbital)
+        zoom_speed = 1.2
+        if event.angleDelta().y() > 0:
+            self.camera.distance /= zoom_speed
+        else:
+            self.camera.distance *= zoom_speed
+            
+        self.camera.update_position()
+        self.update()
 
     # ────────────────────────────────────────────────────────────────────────
     # Teclado
