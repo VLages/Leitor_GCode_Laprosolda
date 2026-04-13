@@ -241,8 +241,8 @@ class GCodeViewer3D(QWidget):
         if not np.all(valid): return
 
         # Cores da Tocha (Metálico/Cinza)
-        color_body = QColor(100, 100, 110, 120)
-        color_tip = QColor(100, 100, 110, 120)
+        color_body = QColor(100, 100, 110, 90)
+        color_tip = QColor(100, 100, 110, 90)
         
         # 4. Desenhar Faces (Cone e Cilindro)
         painter.setPen(Qt.NoPen)
