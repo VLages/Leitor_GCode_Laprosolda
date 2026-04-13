@@ -46,10 +46,8 @@ Segue a lista de tópicos que realizei hoje
 
 Segue a Lista dos tópicos que precisam ser realizados:
 
-- Mostrar a ponta da tocha na renderização da peça
 - Implementar a função de ter um substrato e fixadores costumisaveis (Baixa prioridade os fixadores)
 - Implementar cubo de visualização das fases arestas e quinas apenas por clicks (Igual dos outros softwares de CAD)
-- Ajustar posição da camera ao abrir um código 
 
 ## Dia 5
 
@@ -60,3 +58,11 @@ Feitos desse dia:
 - Tentei realizar a implementação de um viewcube assim como outros programas de CAS possuem, porém estava dando muitos erros e deixei para ser implementado outro dia
 - O problema de leitura foi concertado, agora GCodes com z diferente de 0 podem ser lidos normalmente (pelo menos não apresentaram nenhum defeito os modelos enviados à mim)
 - A matriz que representa a banca de trabalho foi colocada no [0,0,0] da área de trabalho com um valor fixo provisório de 500 x 500 mm (Ainda falta concertar bug - linhas do grid crescem infinitamente dependendo do angulo da camera)
+
+# Dia 6
+
+- Bug das linhas do grid crescerem ao infinito corrigido
+- Foi implementado no botão de configurações a função de pode ajustar o tamanho do grid (tanto nos valores fixos das bancadas 1m x 1m, 70cm x 50cm, 113cm x 80cm, quanto para quaisquer valores que o usuário desejar)
+- Foi implementado a redenrização de um cilindro que representa a ponta da tocha em escala realista (40 mm de comprimento com ponta cônica)
+- Agora toda vez ao abrir um GCode novo, a opção de ver objeto completo vai estar selecionada
+- Posição inicial da câmera ajustada

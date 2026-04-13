@@ -1,5 +1,4 @@
 import re
-import math
 from .gcode_model import GCodeSegment, GCodeModel
 
 class ParsedCommand:
@@ -28,7 +27,7 @@ class GCodeParser:
       G92 - define posicao atual (reset de eixo)
     """
 
-    def parse(self, filepath: str) -> GCodeModel:
+    def parse(self, filepath: str, grid_w=500, grid_d=500) -> GCodeModel:
         model    = GCodeModel()
         # Inicializamos como None para capturar a primeira posição real
         x, y, z  = None, None, None
@@ -97,24 +96,23 @@ class GCodeParser:
 
         # No final do método parse, logo antes de 'return model'
         # Definimos o tamanho total e o espaçamento
-        grid_size = 500  # Tamanho total em mm
-        spacing = 10     # Espaçamento entre linhas (ajustado para dividir bem 500)
-        half_size = grid_size // 2
-
-        # O intervalo vai de -250 a +250 para totalizar 500mm
-        grid_range = range(-half_size, half_size + spacing, spacing)
-
+        spacing = 10
         grid = []
-        # Gerando linhas verticais (paralelas ao eixo Y)
-        for x in grid_range:
-            grid.append(GCodeSegment(x, -half_size, 0, x, half_size, 0, 'travel', -1))
-            
-        # Gerando linhas horizontais (paralelas ao eixo X)
-        for y in grid_range:
-            grid.append(GCodeSegment(-half_size, y, 0, half_size, y, 0, 'travel', -1))
+        
+        half_w = grid_w // 2
+        half_d = grid_d // 2
+        
+        # Subdivisão para evitar o bug do horizonte (Passo 1 da conversa anterior)
+        for x in range(-half_w, half_w + spacing, spacing):
+            for y in range(-half_d, half_d, spacing):
+                grid.append(GCodeSegment(x, y, 0, x, y + spacing, 0, 'travel', -1))
+                
+        for y in range(-half_d, half_d + spacing, spacing):
+            for x in range(-half_w, half_w, spacing):
+                grid.append(GCodeSegment(x, y, 0, x + spacing, y, 0, 'travel', -1))
 
         model.grid_segments = grid
-
+        model.bounds = self._calc_bounds(model.segments)
         return model
 
     def _parse_line(self, line: str, last_command: str = None):

@@ -3,11 +3,13 @@ import sys
 import json
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QFileDialog, QMessageBox,
-    QColorDialog, QCheckBox, QVBoxLayout, QHBoxLayout,
-    QLabel, QDialogButtonBox, QWidget, QGroupBox, QPushButton
+    QCheckBox, QVBoxLayout,
+    QLabel, QDialogButtonBox, QGroupBox, 
+    QRadioButton, QLineEdit, QFormLayout
 )
-from PyQt5.QtCore import Qt, QSettings
-from PyQt5.QtGui import QPixmap, QIcon, QColor, QFont
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor
+
 
 from ui.editor_grafico import Ui_editor_grafico
 from motor_3d.gcode_parser import GCodeParser
@@ -139,53 +141,79 @@ def build_stylesheet(t: dict) -> str:
 # ────────────────────────────────────────────────────────────────────────────
 
 class ConfigDialog(QDialog):
-    def __init__(self, viewer: GCodeViewer3D, dark_mode: bool, parent=None):
+    def __init__(self, current_w, current_d, parent=None):
         super().__init__(parent)
-        self.viewer    = viewer
-        self.dark_mode = dark_mode
-        self.setWindowTitle("Configuracoes")
+        self.setWindowTitle("Configurações de Bancada - Laprosolda")
         self.setModal(True)
-        self.resize(330, 300)
+        self.resize(350, 400)
+        
+        self.result_w = current_w
+        self.result_d = current_d
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
 
-        grp_cores = QGroupBox("Cores de Renderizacao")
-        cores_lay = QVBoxLayout(grp_cores)
+        # Grupo de Tamanho do Grid
+        grp_grid = QGroupBox("Dimensões do Grid (Bancada)")
+        grid_lay = QVBoxLayout(grp_grid)
 
-        for label_text, btn, attr in [
-            ("Extrude (G1)",  self._btn_extrude, "color_extrude"),
-            ("Travel (G0)",   self._btn_travel,  "color_travel"),
-            ("Fundo viewer",  self._btn_bg,      "color_background"),
-        ]:
-            row = QHBoxLayout()
-            lbl = QLabel(label_text)
-            row.addWidget(lbl)
-            row.addStretch()
-            row.addWidget(btn)
-            cores_lay.addLayout(row)
+        self.rad1 = QRadioButton("1000 x 1000 mm (1m x 1m)")
+        self.rad2 = QRadioButton("700 x 500 mm (70cm x 50cm)")
+        self.rad3 = QRadioButton("1130 x 800 mm (113cm x 80cm)")
+        self.rad_custom = QRadioButton("Customizado (mm):")
 
-        layout.addWidget(grp_cores)
+        grid_lay.addWidget(self.rad1)
+        grid_lay.addWidget(self.rad2)
+        grid_lay.addWidget(self.rad3)
+        grid_lay.addWidget(self.rad_custom)
 
-        grp_opts = QGroupBox("Opcoes")
-        opts_lay = QVBoxLayout(grp_opts)
-        self.chk_travel = QCheckBox("Mostrar movimentos Travel (G0)")
-        self.chk_travel.setChecked(viewer.show_travel)
-        self.chk_travel.toggled.connect(lambda v: (
-            setattr(viewer, 'show_travel', v),
-            setattr(viewer, '_dirty', True)
-        ))
-        opts_lay.addWidget(self.chk_travel)
-        layout.addWidget(grp_opts)
+        # Campos customizados
+        self.custom_w = QLineEdit(str(current_w))
+        self.custom_d = QLineEdit(str(current_d))
+        self.custom_w.setEnabled(False)
+        self.custom_d.setEnabled(False)
+        
+        form = QFormLayout()
+        form.addRow("Largura X:", self.custom_w)
+        form.addRow("Profundidade Y:", self.custom_d)
+        grid_lay.addLayout(form)
 
-        btn_reset = QPushButton("Resetar Camera")
-        btn_reset.clicked.connect(lambda: (viewer._fit_view(), setattr(viewer, '_dirty', True)))
-        layout.addWidget(btn_reset)
+        layout.addWidget(grp_grid)
+
+        # Grupo Futuro (Desabilitado)
+        grp_future = QGroupBox("Elementos Adicionais (Em breve)")
+        future_lay = QVBoxLayout(grp_future)
+        chk_subst = QCheckBox("Adicionar Substrato")
+        chk_fix = QCheckBox("Adicionar Fixadores")
+        chk_subst.setEnabled(False)
+        chk_fix.setEnabled(False)
+        future_lay.addWidget(chk_subst)
+        future_lay.addWidget(chk_fix)
+        layout.addWidget(grp_future)
+
+        # Conexões
+        self.rad_custom.toggled.connect(lambda b: (self.custom_w.setEnabled(b), self.custom_d.setEnabled(b)))
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept)
+        btns.accepted.connect(self._handle_accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
+
+    def _handle_accept(self):
+        if self.rad1.isChecked(): 
+            self.result_w, self.result_d = 1000, 1000
+        elif self.rad2.isChecked(): 
+            self.result_w, self.result_d = 700, 500
+        elif self.rad3.isChecked(): 
+            self.result_w, self.result_d = 1130, 800
+        elif self.rad_custom.isChecked():
+            try:
+                self.result_w = int(self.custom_w.text())
+                self.result_d = int(self.custom_d.text())
+            except ValueError:
+                QMessageBox.warning(self, "Erro", "Por favor, insira valores numéricos válidos.")
+                return 
+
+        self.accept() 
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -258,9 +286,14 @@ class editor_grafico(QDialog):
         # Clique no codigo -> highlight no viewer
         self.ui.codigo.cursorPositionChanged.connect(self._on_code_cursor_changed)
 
-        self.ui.configbut.setEnabled(False)
+        self.ui.configbut.setEnabled(True)
 
         self._set_controls_enabled(False)
+
+        # Configurações
+        self.ui.configbut.clicked.connect(self.abrir_configuracoes)
+        self.grid_w = 500
+        self.grid_d = 500
 
     # ────────────────────────────────────────────────────────────────────────
     # Tema dark/light
@@ -308,10 +341,13 @@ class editor_grafico(QDialog):
         )
         if not path:
             return
+        self.current_file_path = path
         try:
-            self.model = self.parser.parse(path)
+            self.model = self.parser.parse(path, self.grid_w, self.grid_d)
             with open(path, 'r', encoding='utf-8', errors='replace') as f:
                 self.ui.codigo.setPlainText(f.read())
+            self.ui.objetoRadio.setChecked(True)
+            self.ui.chkIsolate.setChecked(False)
             self.viewer.set_model(self.model)
             self._update_info()
             self._update_layer_label()
@@ -565,6 +601,26 @@ class editor_grafico(QDialog):
         else:
             self.showFullScreen()
             self.ui.fullscreembut.setText("⊡  Janela Normal")
+
+    def abrir_configuracoes(self):
+        dlg = ConfigDialog(self.grid_w, self.grid_d, self)
+        if dlg.exec_():
+            self.grid_w = dlg.result_w
+            self.grid_d = dlg.result_d
+            if hasattr(self, 'current_file_path'): 
+                self.recarregar_modelo()
+            else:
+                QMessageBox.information(self, "Configuração Salva", 
+                                      f"Bancada ajustada para {self.grid_w}x{self.grid_d}mm.\n"
+                                      "O grid será atualizado ao carregar um arquivo.")
+
+    def recarregar_modelo(self):
+        try:
+            self.model = self.parser.parse(self.current_file_path, self.grid_w, self.grid_d)
+            self.viewer.set_model(self.model, preserve_camera=True)
+            self._update_info()
+        except Exception as e:
+            QMessageBox.warning(self, "Erro ao atualizar", f"Não foi possível atualizar o grid: {e}")
 
     def closeEvent(self, event):
         super().closeEvent(event)

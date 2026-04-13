@@ -203,6 +203,73 @@ class GCodeViewer3D(QWidget):
         self._axis_widget.raise_()
 
     # ────────────────────────────────────────────────────────────────────────
+    # Ponta da Tocha
+    # ────────────────────────────────────────────────────────────────────────    
+
+    def _draw_torch_head(self, painter, pos_3d):
+        """Desenha uma tocha 3D (cilindro + cone) na posição especificada."""
+        # Configurações da Tocha (em mm)
+        r = 5           # Raio do corpo
+        h_cone = 10     # Altura da ponta cônica
+        h_cyl = 35      # Altura do corpo cilíndrico
+        segments = 32    # Resolução (8 lados para visual profissional/técnico)
+
+        # 1. Definir vértices locais (relativos à ponta 0,0,0)
+        # Ponta da tocha (onde a solda ocorre)
+        tip = np.array([0, 0, 0, 1])
+        
+        # Base do cone / Início do cilindro
+        cone_base = []
+        for i in range(segments):
+            angle = 2 * math.pi * i / segments
+            cone_base.append([r * math.cos(angle), r * math.sin(angle), h_cone, 1])
+        
+        # Topo do cilindro
+        cyl_top = []
+        for i in range(segments):
+            angle = 2 * math.pi * i / segments
+            cyl_top.append([r * math.cos(angle), r * math.sin(angle), h_cone + h_cyl, 1])
+
+        # 2. Transladar para a posição real da peça
+        all_verts = np.array([tip] + cone_base + cyl_top)
+        all_verts[:, 0] += pos_3d[0]
+        all_verts[:, 1] += pos_3d[1]
+        all_verts[:, 2] += pos_3d[2]
+
+        # 3. Projetar para a tela
+        pts_2d, valid = self._project_batch(all_verts)
+        if not np.all(valid): return
+
+        # Cores da Tocha (Metálico/Cinza)
+        color_body = QColor(100, 100, 110, 120)
+        color_tip = QColor(100, 100, 110, 120)
+        
+        # 4. Desenhar Faces (Cone e Cilindro)
+        painter.setPen(Qt.NoPen)
+        
+        # Faces do Cone (triângulos da ponta até a base circular)
+        p_tip = QPoint(pts_2d[0,0], pts_2d[0,1])
+        for i in range(segments):
+            next_i = (i + 1) % segments + 1
+            poly = [p_tip, QPoint(pts_2d[i+1,0], pts_2d[i+1,1]), QPoint(pts_2d[next_i,0], pts_2d[next_i,1])]
+            painter.setBrush(QBrush(color_tip))
+            painter.drawPolygon(*poly)
+
+        # Faces do Cilindro (quadriláteros entre as duas circunferências)
+        for i in range(segments):
+            idx = i + 1
+            next_idx = (i + 1) % segments + 1
+            top_idx = idx + segments
+            next_top_idx = next_idx + segments
+            
+            poly = [
+                QPoint(pts_2d[idx,0], pts_2d[idx,1]), QPoint(pts_2d[next_idx,0], pts_2d[next_idx,1]),
+                QPoint(pts_2d[next_top_idx,0], pts_2d[next_top_idx,1]), QPoint(pts_2d[top_idx,0], pts_2d[top_idx,1])
+            ]
+            painter.setBrush(QBrush(color_body))
+            painter.drawPolygon(*poly)
+
+    # ────────────────────────────────────────────────────────────────────────
     # Posicionamento do gizmo ao redimensionar
     # ────────────────────────────────────────────────────────────────────────
 
@@ -228,8 +295,8 @@ class GCodeViewer3D(QWidget):
     # ────────────────────────────────────────────────────────────────────────
 
     def _make_initial_rotation(self):
-        pitch = math.radians(30)
-        yaw   = math.radians(45)
+        pitch = math.radians(-30)
+        yaw   = math.radians(-30)
         Rx = np.array([
             [1,             0,              0],
             [0,  math.cos(pitch), -math.sin(pitch)],
@@ -246,40 +313,51 @@ class GCodeViewer3D(QWidget):
     # Modelo
     # ────────────────────────────────────────────────────────────────────────
 
-    def set_model(self, model: GCodeModel):
+    def set_model(self, model: GCodeModel, preserve_camera=False):
         self.model = model
         self._sim_index       = -1
         self._highlighted_seg = None
         self._sim_running     = False
         self._sim_timer.stop()
-        W = max(self.width(),  1)
-        H = max(self.height(), 1)
-        self.camera     = Camera(W, H)
-        self.projection = Projection(self.camera, W, H)
+        self.current_layer    = -1 
+        self.layer_isolated   = False
+
+        if not preserve_camera or self.camera is None:
+            W = max(self.width(),  1)
+            H = max(self.height(), 1)
+            self.camera     = Camera(W, H)
+            self.projection = Projection(self.camera, W, H)
+            self._fit_view()
+
         self._precompute_geometry()
-        self._fit_view()
         self._reposition_gizmo()
         self._dirty = True
 
     def _precompute_geometry(self):
+        # 1. Processa os segmentos da peça (G1/G0)
         segs = self.model.segments
+        if segs:
+            starts = np.array([s.start for s in segs], dtype=np.float64)
+            ends   = np.array([s.end   for s in segs], dtype=np.float64)
+            ones   = np.ones((len(segs), 1), dtype=np.float64)
+            self._verts_start = np.hstack([starts, ones])
+            self._verts_end   = np.hstack([ends,   ones])
+            self._types       = np.array([0 if s.type == 'travel' else 1 for s in segs])
+            self._layers_arr  = np.array([s.layer for s in segs])
+            self._line_nums   = np.array([s.line_number for s in segs])
+
+        # 2. Processa os segmentos do GRID (Bancada)
+        # É aqui que a atualização do tamanho acontece!
         grid = self.model.grid_segments
-        if not segs:
-            return
-        starts = np.array([s.start for s in segs], dtype=np.float64)
-        ends   = np.array([s.end   for s in segs], dtype=np.float64)
-        ones   = np.ones((len(segs), 1), dtype=np.float64)
-        self._verts_start = np.hstack([starts, ones])
-        self._verts_end   = np.hstack([ends,   ones])
-        self._types       = np.array([0 if s.type == 'travel' else 1 for s in segs])
-        self._layers_arr  = np.array([s.layer for s in segs])
-        self._line_nums   = np.array([s.line_number for s in segs])
         if grid:
             g_starts = np.array([s.start for s in grid], dtype=np.float64)
             g_ends   = np.array([s.end   for s in grid], dtype=np.float64)
             g_ones   = np.ones((len(grid), 1), dtype=np.float64)
             self._grid_v_start = np.hstack([g_starts, g_ones])
             self._grid_v_end   = np.hstack([g_ends, g_ones])
+        else:
+            self._grid_v_start = None
+            self._grid_v_end   = None
 
     def _fit_view(self):
         if self.model is None or self.model.bounds is None:
@@ -546,10 +624,9 @@ class GCodeViewer3D(QWidget):
         v_cam = verts @ cam_mat
         v = v_cam @ proj_mat
         w = v[:, -1:].copy()
-        w[np.abs(w) < 1e-6] = 1e-6
+        valid = w.flatten() > self.camera.near_plane
+        w[w < 1e-6] = 1e-6 
         v = v / w
-        z_depth = np.abs(v_cam[:, 2]) 
-        valid = z_depth > self.camera.near_plane
         v = v @ scr_mat
         return v[:, :2].astype(np.int32), valid
 
@@ -638,31 +715,28 @@ class GCodeViewer3D(QWidget):
         draw_group(layer_mask & extrude & sim_done, self.color_extrude)
 
         # Segmento atual da simulacao
+        if self._highlighted_seg is not None:
+                hi = self._highlighted_seg
+                if 0 <= hi < total and valid[hi]:
+                    # Destaque da linha selecionada (Ciano/Azul claro, espessura 3)
+                    painter.setPen(QPen(QColor(0, 220, 255), 3, Qt.SolidLine))
+                    painter.drawLine(int(pts0[hi,0]), int(pts0[hi,1]), 
+                                    int(pts1[hi,0]), int(pts1[hi,1]))
+                    
+                    # Desenha a tocha no ponto final da linha selecionada
+                    self._draw_torch_head(painter, self.model.segments[hi].end)
+            
+            # 2. Destaque da Simulação Independente (Pausado/Rodando)
         if 0 <= self._sim_index < total:
             i = self._sim_index
             if valid[i]:
-                painter.setPen(QPen(QColor(255, 255, 100), 2))
-                painter.drawLine(int(pts0[i,0]), int(pts0[i,1]),
-                                 int(pts1[i,0]), int(pts1[i,1]))
-
-        # Segmento destacado por selecao no codigo
-        if self._highlighted_seg is not None:
-            hi = self._highlighted_seg
-            if 0 <= hi < total and valid[hi]:
-                # Ponto inicial destacado (circulo)
-                painter.setPen(QPen(QColor(0, 220, 255), 2))
-                painter.setBrush(QBrush(QColor(0, 220, 255, 180)))
-                r = 5
-                painter.drawEllipse(pts0[hi,0]-r, pts0[hi,1]-r, r*2, r*2)
-                # Linha destacada
-                painter.setPen(QPen(QColor(0, 220, 255), 3))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawLine(int(pts0[hi,0]), int(pts0[hi,1]),
-                                 int(pts1[hi,0]), int(pts1[hi,1]))
-                # Ponto final
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(QColor(255, 80, 80, 200)))
-                painter.drawEllipse(pts1[hi,0]-r, pts1[hi,1]-r, r*2, r*2)
+                # Destaque da linha de simulação (Amarelo brilhante, espessura 3)
+                painter.setPen(QPen(QColor(255, 255, 50), 3, Qt.SolidLine))
+                painter.drawLine(int(pts0[i,0]), int(pts0[i,1]), 
+                                int(pts1[i,0]), int(pts1[i,1]))
+                
+                # Desenha a tocha no ponto final (destino) da simulação
+                self._draw_torch_head(painter, self.model.segments[i].end)
 
     # ────────────────────────────────────────────────────────────────────────
     # Mouse
