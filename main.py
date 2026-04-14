@@ -699,8 +699,6 @@ class editor_grafico(QDialog):
             self.viewer.substrate_d = self.substrate_d
             if hasattr(self, 'current_file_path'): 
                 self.recarregar_modelo()
-            else:
-                QMessageBox.information(self, "Configuração Salva. O grid será atualizado ao carregar um arquivo.")
 
     def recarregar_modelo(self):
         if not hasattr(self, 'current_file_path'): 
