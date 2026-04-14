@@ -18,7 +18,10 @@ class GCodeModel:
         self.grid_segments = []
         self.layers   = {}    # dict: layer_index (int) -> [GCodeSegment, ...]
         self.bounds   = None  # (xmin, ymin, zmin, xmax, ymax, zmax)
-        self._cached_length = None
+        
+        # --- A CORREÇÃO DO ERRO ESTÁ AQUI ---
+        # Inicializa a distância zerada para receber a soma em tempo real
+        self.total_length = 0.0
 
     @property
     def layer_count(self):
@@ -27,23 +30,6 @@ class GCodeModel:
     @property
     def sorted_z_values(self):
         return sorted(self.layers.keys())
-
-    @property
-    def total_length(self):
-        """Comprimento total do percurso em mm (Cacheado para performance)."""
-        if self._cached_length is not None:
-            return self._cached_length
-            
-        import math
-        total = 0.0
-        for seg in self.segments:
-            dx = seg.end[0] - seg.start[0]
-            dy = seg.end[1] - seg.start[1]
-            dz = seg.end[2] - seg.start[2]
-            total += math.sqrt(dx*dx + dy*dy + dz*dz)
-            
-        self._cached_length = total
-        return total
 
     def __repr__(self):
         return (f"GCodeModel({len(self.segments)} segmentos, "

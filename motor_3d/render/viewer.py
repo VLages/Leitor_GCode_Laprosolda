@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QColor, QPen, QCursor, QFont, QBrush, QPolygon, QPixmap, QTransform, QPolygonF
-from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QLine, QPointF
+from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QLine, QPointF, pyqtSignal
+import time
 import numpy as np
 import math
 from .camera import Camera
@@ -230,6 +231,7 @@ class ViewCubeWidget(QWidget):
 
 
 class GCodeViewer3D(QWidget):
+    fps_changed = pyqtSignal(int)
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -294,11 +296,26 @@ class GCodeViewer3D(QWidget):
         self.color_travel_old   = QColor(100, 25, 25)   
         self.color_background = QColor(22, 22, 32)
 
-        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFocusPolicy(Qt.StrongFocus)  
+
+        # Guarda a geometria estática da tocha na RAM
+        self._torch_verts = self._generate_torch_geometry()
+
+        self._frame_count = 0
+        self._last_fps_time = time.time()
+        self._current_fps = 0.0
 
         # ── View Cube Inteiriço ──────────────────────────────────────────────
         self._axis_widget = ViewCubeWidget(self, self)
         self._axis_widget.raise_()
+
+    def _generate_torch_geometry(self):
+        """OTIMIZAÇÃO O(1): Calcula os 64 vértices da tocha uma única vez."""
+        r, h_cone, h_cyl, segments = 5, 10, 35, 32
+        tip = [0, 0, 0, 1]
+        cone_base = [[r * math.cos(2 * math.pi * i / segments), r * math.sin(2 * math.pi * i / segments), h_cone, 1] for i in range(segments)]
+        cyl_top = [[r * math.cos(2 * math.pi * i / segments), r * math.sin(2 * math.pi * i / segments), h_cone + h_cyl, 1] for i in range(segments)]
+        return np.array([tip] + cone_base + cyl_top)
 
     # ────────────────────────────────────────────────────────────────────────
     # Animação de Câmera (View Cube)
@@ -342,32 +359,17 @@ class GCodeViewer3D(QWidget):
     # Ponta da Tocha
     # ────────────────────────────────────────────────────────────────────────    
 
-    def _draw_torch_head(self, painter, pos_3d):
-        r = 5           
-        h_cone = 10     
-        h_cyl = 35      
-        segments = 32    
-
-        tip = np.array([0, 0, 0, 1])
-        
-        cone_base = []
-        for i in range(segments):
-            angle = 2 * math.pi * i / segments
-            cone_base.append([r * math.cos(angle), r * math.sin(angle), h_cone, 1])
-        
-        cyl_top = []
-        for i in range(segments):
-            angle = 2 * math.pi * i / segments
-            cyl_top.append([r * math.cos(angle), r * math.sin(angle), h_cone + h_cyl, 1])
-
-        all_verts = np.array([tip] + cone_base + cyl_top)
+    def _draw_torch_head(self, painter, pos_3d, cam_mat):
+        """Usa a geometria pré-calculada em vez de criar o modelo do zero a cada frame."""
+        all_verts = self._torch_verts.copy()
         all_verts[:, 0] += pos_3d[0]
         all_verts[:, 1] += pos_3d[1]
         all_verts[:, 2] += pos_3d[2]
 
-        pts_2d, valid = self._project_batch(all_verts)
+        pts_2d, valid = self._project_batch(all_verts, cam_mat)
         if not np.all(valid): return
 
+        segments = 32
         color_body = QColor(100, 100, 110, 90)
         color_tip = QColor(100, 100, 110, 90)
         
@@ -438,9 +440,14 @@ class GCodeViewer3D(QWidget):
             ones   = np.ones((len(segs), 1), dtype=np.float64)
             self._verts_start = np.hstack([starts, ones])
             self._verts_end   = np.hstack([ends,   ones])
+            offset_z = self.substrate_h if self.substrate_enabled else 0.0
+            if offset_z > 0:
+                self._verts_start[:, 2] += offset_z
+                self._verts_end[:, 2] += offset_z
             self._types       = np.array([0 if s.type == 'travel' else 1 for s in segs])
             self._layers_arr  = np.array([s.layer for s in segs])
             self._line_nums   = np.array([s.line_number for s in segs])
+            self._base_arange = np.arange(len(segs))
 
         grid = self.model.grid_segments
         if grid:
@@ -452,6 +459,9 @@ class GCodeViewer3D(QWidget):
         else:
             self._grid_v_start = None
             self._grid_v_end   = None
+        if segs:
+            self._line_nums   = np.array([s.line_number for s in segs])
+            self._base_arange = np.arange(len(segs))
 
     def _fit_view(self):
         self.camera.yaw = math.radians(-45)
@@ -634,140 +644,162 @@ class GCodeViewer3D(QWidget):
         # Escreve o texto com os comandos do mouse no rodapé
         self._draw_hint(painter)
 
+        self._update_fps()
+
     def _draw_hint(self, painter):
         hint_color = QColor(100, 100, 120) if self.color_background.lightness() < 128 else QColor(120, 120, 140)
         painter.setPen(QPen(hint_color))
         painter.setFont(QFont("Consolas", 8))
         painter.drawText(8, self.height() - 8,
             "Esq: orbitar  |  Scroll: zoom  |  Meio: pan  |  F: centralizar")
+        
+    def _update_fps(self):
+        self._frame_count += 1
+        current_time = time.time()
+        elapsed = current_time - self._last_fps_time
+        
+        if elapsed >= 0.5:
+            self._current_fps = self._frame_count / elapsed
+            self._frame_count = 0
+            self._last_fps_time = current_time
+            
+            # Envia o número inteiro para a interface principal
+            self.fps_changed.emit(int(self._current_fps))
 
-    def _project_batch(self, verts: np.ndarray):
-        cam_mat  = self.camera.camera_matrix()
-        proj_mat = self.projection.projection_matrix
-        scr_mat  = self.projection.to_screen_matrix
+    def _project_batch(self, verts: np.ndarray, cam_mat=None):
+        if cam_mat is None:
+            cam_mat = self.camera.camera_matrix()
+
+        # 1. ÚNICA ALOCAÇÃO: Multiplica pela matriz da câmera para gerar o array base (N, 4)
         v_cam = verts @ cam_mat
-        v = v_cam @ proj_mat
-        w = v[:, -1:].copy()
-        valid = w.flatten() > self.camera.near_plane
-        w[w < 1e-6] = 1e-6 
-        v = v / w
-        v = v @ scr_mat
-        v_safe = np.nan_to_num(v[:, :2], nan=0.0, posinf=30000.0, neginf=-30000.0)
-        with np.errstate(invalid='ignore', over='ignore'):
-            v_int = np.clip(v_safe, -30000, 30000).astype(np.int32)
+
+        # 2. Cria "Views" (Referências) para as colunas SEM gastar memória RAM
+        x = v_cam[:, 0]
+        y = v_cam[:, 1]
+        w = v_cam[:, 2] # Na nossa matemática Z-UP (Laprosolda), a profundidade W é o eixo Z da câmera
+
+        # 3. Calcula quais pontos estão na frente do plano da câmera
+        valid = w > self.camera.near_plane
+
+        # 4. Modifica o W "In-Place" para evitar a falha de Divisão por Zero
+        w[w < 1e-6] = 1e-6
+
+        # 5. Aplica a Projeção Perspectiva manualmente (Pula a matriz de projeção 4x4)
+        m00 = self.projection.projection_matrix[0, 0]
+        m11 = self.projection.projection_matrix[1, 1]
+        
+        x *= m00
+        x /= w
+        y *= m11
+        y /= w
+
+        # 6. Converte para o Espaço da Tela (Screen Space) In-Place (Pula a to_screen_matrix)
+        HW = self.camera.WIDTH / 2.0
+        HH = self.camera.HEIGHT / 2.0
+
+        # Matemática do X: screen_x = (x + 1) * HW
+        x += 1.0
+        x *= HW
+
+        # Matemática do Y: screen_y = (1 - y) * HH -> Alterado In-Place
+        y *= -1.0
+        y += 1.0
+        y *= HH
+
+        # 7. Corta os pontos que estão fora do limite do Canvas do PyQt (-30000, 30000) In-Place
+        np.clip(x, -30000, 30000, out=x)
+        np.clip(y, -30000, 30000, out=y)
+
+        # 8. Extrai as 2 primeiras colunas (X e Y) já calculadas e converte para Inteiro
+        v_int = v_cam[:, :2].astype(np.int32)
+
         return v_int, valid
 
     def _draw_segments_batched(self, painter: QPainter):
-        # 1. Desenho do Grid (inalterado)
+        # 1. CACHE DE FRAME: Calcula a matriz da câmera apenas UMA VEZ por frame
+        cam_mat = self.camera.camera_matrix()
+
+        # 2. OTIMIZAÇÃO O(1): Desenho do Grid em Lote (Batching)
         if hasattr(self, '_grid_v_start') and self._grid_v_start is not None:
-            g_pts0, g_valid0 = self._project_batch(self._grid_v_start)
-            g_pts1, g_valid1 = self._project_batch(self._grid_v_end)
+            # Repassa a matriz cacheada
+            g_pts0, g_valid0 = self._project_batch(self._grid_v_start, cam_mat)
+            g_pts1, g_valid1 = self._project_batch(self._grid_v_end, cam_mat)
             g_valid = g_valid0 & g_valid1
             
-            if self.dark_mode:
-                grid_color = QColor(100, 100, 120, 150)
-            else:
-                grid_color = QColor(160, 160, 180, 200) 
-            
-            pen = QPen(grid_color, 1, Qt.SolidLine)
-            painter.setPen(pen)
+            grid_color = QColor(100, 100, 120, 150) if self.dark_mode else QColor(160, 160, 180, 200) 
+            painter.setPen(QPen(grid_color, 1, Qt.SolidLine))
         
-            for i in range(len(self._grid_v_start)):
-                if g_valid[i]:
-                    painter.drawLine(
-                        int(g_pts0[i,0]), int(g_pts0[i,1]), 
-                        int(g_pts1[i,0]), int(g_pts1[i,1])
-                    )
+            # Troca o FOR loop lento do Python por um envio direto ao C++ via QLine
+            indices = np.where(g_valid)[0]
+            lines = [QLine(int(g_pts0[i,0]), int(g_pts0[i,1]), int(g_pts1[i,0]), int(g_pts1[i,1])) for i in indices]
+            painter.drawLines(lines)
 
         if self._verts_start is None:
             return
         
-        # 2. Aplicação do Offset do Substrato
-        v_start = self._verts_start.copy()
-        v_end = self._verts_end.copy()
-
-        offset_z = self.substrate_h if self.substrate_enabled else 0.0
-        if offset_z > 0:
-            v_start[:, 2] += offset_z
-            v_end[:, 2] += offset_z
-
-        # Projeta os pontos COM o offset (e NÃO recalculamos mais depois!)
-        pts0, valid0 = self._project_batch(v_start)
-        pts1, valid1 = self._project_batch(v_end)
+        pts0, valid0 = self._project_batch(self._verts_start, cam_mat)
+        pts1, valid1 = self._project_batch(self._verts_end, cam_mat)
         valid = valid0 & valid1
 
         total = len(self._verts_start)
 
-        # 3. Máscaras de Camada e Simulação
         if self.current_layer >= 0:
-            if self.layer_isolated:
-                layer_mask = self._layers_arr == self.current_layer
-            else:
-                layer_mask = self._layers_arr <= self.current_layer
+            if self.layer_isolated: layer_mask = self._layers_arr == self.current_layer
+            else: layer_mask = self._layers_arr <= self.current_layer
         else:
             layer_mask = np.ones(total, dtype=bool)
 
         if self._sim_index >= 0:
-            sim_done    = np.arange(total) <= self._sim_index
-            sim_pending = np.arange(total) >  self._sim_index
+            # 3. OTIMIZAÇÃO O(1): Usa o array cacheado em vez de np.arange()
+            sim_done    = self._base_arange <= self._sim_index
+            sim_pending = self._base_arange >  self._sim_index
         else:
             sim_done    = np.ones(total,  dtype=bool)
             sim_pending = np.zeros(total, dtype=bool)
 
-        # 4. Função interna de desenho
         def draw_group(mask, color, width=1):
             m = mask & valid
-            if not np.any(m):
-                return
+            if not np.any(m): return
             painter.setPen(QPen(color, width))
             indices = np.where(m)[0]
-            lines = [
-                QLine(int(pts0[i,0]), int(pts0[i,1]), int(pts1[i,0]), int(pts1[i,1])) 
-                for i in indices
-            ]
+            lines = [QLine(int(pts0[i,0]), int(pts0[i,1]), int(pts1[i,0]), int(pts1[i,1])) for i in indices]
             painter.drawLines(lines)
 
         extrude = self._types == 1
         travel  = self._types == 0
 
-        # Desenha as linhas do G-Code
         if self.current_layer >= 0 and not self.layer_isolated:
             older = self._layers_arr < self.current_layer
             draw_group(older & extrude, self.color_extrude_old)
-            if self.show_travel:
-                draw_group(older & travel, self.color_travel_old)
+            if self.show_travel: draw_group(older & travel, self.color_travel_old)
 
         if self._sim_index >= 0:
             draw_group(layer_mask & extrude & sim_pending, self.color_extrude_dim)
-            if self.show_travel:
-                draw_group(layer_mask & travel & sim_pending, self.color_travel_dim)
+            if self.show_travel: draw_group(layer_mask & travel & sim_pending, self.color_travel_dim)
 
-        if self.show_travel:
-            draw_group(layer_mask & travel & sim_done, self.color_travel)
+        if self.show_travel: draw_group(layer_mask & travel & sim_done, self.color_travel)
         draw_group(layer_mask & extrude & sim_done, self.color_extrude)
 
-        # 5. Desenho da Tocha de Soldagem (Corrigido para aplicar o offset_z e remover duplicatas)
+        # 4. Passa a matriz cacheada para o desenho da tocha
         if self._highlighted_seg is not None:
             hi = self._highlighted_seg
             if 0 <= hi < total and valid[hi]:
                 painter.setPen(QPen(QColor(0, 220, 255), 3, Qt.SolidLine))
-                painter.drawLine(int(pts0[hi,0]), int(pts0[hi,1]), 
-                                int(pts1[hi,0]), int(pts1[hi,1]))
+                painter.drawLine(int(pts0[hi,0]), int(pts0[hi,1]), int(pts1[hi,0]), int(pts1[hi,1]))
                 
-                pos_torch = np.array(self.model.segments[hi].end)
-                pos_torch[2] += offset_z # Empurra a tocha para cima
-                self._draw_torch_head(painter, pos_torch)
+                # Pega a posição XYZ (índices 0, 1, 2) já com o offset de 5mm aplicado
+                pos_torch = self._verts_end[hi][:3]
+                self._draw_torch_head(painter, pos_torch, cam_mat)
             
         if 0 <= self._sim_index < total:
             i = self._sim_index
             if valid[i]:
                 painter.setPen(QPen(QColor(255, 255, 50), 3, Qt.SolidLine))
-                painter.drawLine(int(pts0[i,0]), int(pts0[i,1]), 
-                                int(pts1[i,0]), int(pts1[i,1]))
+                painter.drawLine(int(pts0[i,0]), int(pts0[i,1]), int(pts1[i,0]), int(pts1[i,1]))
                 
-                pos_torch = np.array(self.model.segments[i].end)
-                pos_torch[2] += offset_z # Empurra a tocha para cima
-                self._draw_torch_head(painter, pos_torch)
+                # Pega a posição XYZ (índices 0, 1, 2) já com o offset de 5mm aplicado
+                pos_torch = self._verts_end[i][:3]
+                self._draw_torch_head(painter, pos_torch, cam_mat)
 
     def mousePressEvent(self, event):
         self._last_mouse_pos = event.pos()

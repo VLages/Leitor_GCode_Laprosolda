@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QLabel, QDialogButtonBox, QGroupBox, 
     QRadioButton, QLineEdit, QFormLayout
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
 
 
@@ -231,6 +231,38 @@ class ConfigDialog(QDialog):
 
         self.accept() 
 
+class GCodeLoaderThread(QThread):
+    """
+    OTIMIZAÇÃO: Move o carregamento e o parse O(N) para uma thread secundária.
+    Resolve o congelamento da interface (Bloqueante) em arquivos grandes.
+    """
+    finished = pyqtSignal(object, str)
+    error = pyqtSignal(str)
+
+    def __init__(self, parser, path, grid_w, grid_d):
+        super().__init__()
+        self.parser = parser
+        self.path = path
+        self.grid_w = grid_w
+        self.grid_d = grid_d
+
+    def run(self):
+        try:
+            # 1. Resolve parcialmente o duplo IO (O(L)x2): Lemos o texto na thread.
+            # Como o parser.parse() roda na sequência, o Sistema Operacional 
+            # servirá o arquivo diretamente da memória RAM (Cache de Disco), 
+            # tornando a segunda leitura praticamente instantânea.
+            with open(self.path, 'r', encoding='utf-8', errors='replace') as f:
+                raw_text = f.read()
+            
+            # 2. Faz o parse matemático em segundo plano
+            model = self.parser.parse(self.path, self.grid_w, self.grid_d)
+            
+            # 3. Envia os dados prontos de volta para a interface principal
+            self.finished.emit(model, raw_text)
+        except Exception as e:
+            self.error.emit(str(e))
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # Janela principal
@@ -250,6 +282,8 @@ class editor_grafico(QDialog):
             Qt.WindowCloseButtonHint
         )
 
+        
+
         self.parser = GCodeParser()
         self.model  = None
 
@@ -261,6 +295,7 @@ class editor_grafico(QDialog):
         placeholder_layout.addWidget(self.viewer)
         self.viewer.on_segment_changed = self._on_segment_changed
         self.viewer.on_layer_changed   = self._on_layer_changed
+        self.viewer.fps_changed.connect(self.atualizar_titulo_fps)
 
         # Aplica cores salvas no cache
         self.viewer.color_extrude = QColor(34, 103, 252)   # azul do tema (#2267fc)
@@ -351,26 +386,46 @@ class editor_grafico(QDialog):
     # Importar GCode
     # ────────────────────────────────────────────────────────────────────────
 
+    # ────────────────────────────────────────────────────────────────────────
+    # Importar GCode
+    # ────────────────────────────────────────────────────────────────────────
+
     def importar_gcode(self):
         path, _ = QFileDialog.getOpenFileName(
             self, 'Abrir GCode', '', '*.gcode *.nc *.txt'
         )
         if not path:
             return
+            
         self.current_file_path = path
-        try:
-            self.model = self.parser.parse(path, self.grid_w, self.grid_d)
-            self.ui.codigo.setLineWrapMode(self.ui.codigo.NoWrap)
-            with open(path, 'r', encoding='utf-8', errors='replace') as f:
-                self.ui.codigo.setPlainText(f.read())
-            self.ui.objetoRadio.setChecked(True)
-            self.ui.chkIsolate.setChecked(False)
-            self.viewer.set_model(self.model)
-            self._update_info()
-            self._update_layer_label()
-            self._set_controls_enabled(True)
-        except Exception as e:
-            QMessageBox.critical(self, "Erro ao abrir arquivo", str(e))
+        
+        # Desabilita a interface durante o carregamento para evitar crash
+        self._set_controls_enabled(False)
+        self.ui.codigo.setLineWrapMode(self.ui.codigo.NoWrap)
+        self.ui.codigo.setPlainText("Carregando arquivo e calculando matrizes 3D...\nIsso pode levar alguns segundos em arquivos grandes. Aguarde.")
+        self.ui.lbl_info.setText("Processando...")
+
+        # Inicia a Thread Secundária
+        self.loader_thread = GCodeLoaderThread(self.parser, path, self.grid_w, self.grid_d)
+        self.loader_thread.finished.connect(self._on_import_finished)
+        self.loader_thread.error.connect(self._on_import_error)
+        self.loader_thread.start()
+
+    def _on_import_finished(self, model, raw_text):
+        self.model = model
+        self.ui.codigo.setPlainText(raw_text)
+        self.ui.objetoRadio.setChecked(True)
+        self.ui.chkIsolate.setChecked(False)
+        self.viewer.set_model(self.model)
+        self._update_info()
+        self._update_layer_label()
+        self._set_controls_enabled(True)
+
+    def _on_import_error(self, err_msg):
+        QMessageBox.critical(self, "Erro ao abrir arquivo", err_msg)
+        self.ui.codigo.setPlainText(f"Erro no carregamento: {err_msg}")
+        self._set_controls_enabled(True)
+        self.ui.lbl_info.setText("Erro")
 
     # ────────────────────────────────────────────────────────────────────────
     # Exportar imagem
@@ -398,6 +453,12 @@ class editor_grafico(QDialog):
     def _on_code_cursor_changed(self):
         cursor = self.ui.codigo.textCursor()
         line   = cursor.blockNumber() + 1   # 1-based
+        
+        # OTIMIZAÇÃO: Evita recálculo O(N) desnecessário no render 3D.
+        # Se o cursor apenas andou para os lados na MESMA linha vertical, encerra a função.
+        if getattr(self, '_selected_line', -1) == line:
+            return
+            
         self._selected_line = line 
 
         self.ui.lbl_current_line.setText(f"Linha: {line}")
@@ -619,6 +680,10 @@ class editor_grafico(QDialog):
             self.showFullScreen()
             self.ui.fullscreembut.setText("⊡  Janela Normal")
 
+    def atualizar_titulo_fps(self, fps):
+        """Atualiza a barra superior da janela do Windows com o FPS."""
+        self.setWindowTitle(f"Leitor GCode — Laprosolda | FPS: {fps}")
+
     def abrir_configuracoes(self):
         dlg = ConfigDialog(self.grid_w, self.grid_d, self)
         if dlg.exec_():
@@ -640,12 +705,22 @@ class editor_grafico(QDialog):
                 QMessageBox.information(self, "Configuração Salva. O grid será atualizado ao carregar um arquivo.")
 
     def recarregar_modelo(self):
-        try:
-            self.model = self.parser.parse(self.current_file_path, self.grid_w, self.grid_d)
-            self.viewer.set_model(self.model, preserve_camera=True)
-            self._update_info()
-        except Exception as e:
-            QMessageBox.warning(self, "Erro ao atualizar", f"Não foi possível atualizar o grid: {e}")
+        if not hasattr(self, 'current_file_path'): 
+            return
+            
+        self._set_controls_enabled(False)
+        self.ui.lbl_info.setText("Recalculando grid...")
+        
+        self.loader_thread = GCodeLoaderThread(self.parser, self.current_file_path, self.grid_w, self.grid_d)
+        self.loader_thread.finished.connect(self._on_reload_finished)
+        self.loader_thread.error.connect(self._on_import_error)
+        self.loader_thread.start()
+
+    def _on_reload_finished(self, model, raw_text):
+        self.model = model
+        self.viewer.set_model(self.model, preserve_camera=True)
+        self._update_info()
+        self._set_controls_enabled(True)
 
     def closeEvent(self, event):
         super().closeEvent(event)

@@ -7,12 +7,11 @@ class Camera:
         self.WIDTH  = width
         self.HEIGHT = height
 
-        # 1. Parâmetros Orbitais (Referência para o Laprosolda)
-        # O alvo (target) é o ponto onde a câmera sempre estará olhando (o centro do grid)
+        # 1. Parâmetros Orbitais
         self.target = np.array([0.0, 0.0, 0.0])
-        self.distance = 600.0  # Distância da câmera até o objeto
-        self.yaw = math.radians(-45)  # Rotação horizontal
-        self.pitch = math.radians(30) # Rotação vertical (inclinação)
+        self.distance = 600.0  
+        self.yaw = math.radians(-45)  
+        self.pitch = math.radians(30) 
 
         # 2. Atributos de Projeção
         self.near_plane = 0.01
@@ -20,22 +19,32 @@ class Camera:
         self.h_fov = math.pi / 3
         self.v_fov = self.h_fov * (height / width)
 
-        # 3. Posição da Câmera (será calculada a partir dos ângulos)
         self.position = np.array([0.0, 0.0, 0.0, 1.0])
+        
+        # --- OTIMIZAÇÃO: Cache da Matriz de Transformação ---
+        self._cached_matrix = None
+        self._matrix_dirty = True # Começa 'suja' para forçar o primeiro cálculo
+        
         self.update_position()
 
     def update_position(self):
         """Calcula a posição X, Y, Z no sistema Z-UP (CAD)."""
-        # Matemática esférica para posicionar a câmera ao redor do target
-        # Z representa a altura
         x = self.target[0] + self.distance * math.cos(self.pitch) * math.sin(self.yaw)
         y = self.target[1] + self.distance * math.cos(self.pitch) * math.cos(self.yaw)
         z = self.target[2] + self.distance * math.sin(self.pitch)
         
         self.position = np.array([x, y, z, 1.0])
+        
+        # Sempre que os ângulos, alvo ou posição mudam, nós "sujamos" a flag
+        # Isso avisa a camera_matrix que ela precisa recalcular no próximo frame
+        self._matrix_dirty = True
 
     def camera_matrix(self):
-        """Gera a matriz de visualização LookAt (Z-UP)."""
+        """Gera a matriz de visualização LookAt (Z-UP) usando Caching O(1 real)."""
+        # Se a câmera não se moveu desde o último frame, devolve a matriz instantaneamente
+        if not self._matrix_dirty and self._cached_matrix is not None:
+            return self._cached_matrix
+
         # Vetor para onde a câmera aponta
         forward = self.target - self.position[:3]
         norm_f = np.linalg.norm(forward)
@@ -69,4 +78,8 @@ class Camera:
             [-x, -y, -z, 1]
         ])
         
-        return T @ R
+        # Salva o cálculo na memória cache e "limpa" a flag
+        self._cached_matrix = T @ R
+        self._matrix_dirty = False
+        
+        return self._cached_matrix

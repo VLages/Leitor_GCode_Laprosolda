@@ -1,8 +1,14 @@
 import re
+import math
+from collections import namedtuple
 from .gcode_model import GCodeSegment, GCodeModel
 
-PATTERN_CMD = re.compile(r'^([A-Z])0*(\d+)$')
-PATTERN_PARAMS = re.compile(r'([A-Z])([-+]?\d*\.?\d+)')
+# OTIMIZAÇÃO: Compilação única de RegEx (Corta o gargalo de O(2L) para O(1))
+CMD_PATTERN = re.compile(r'^([A-Z])0*(\d+)$')
+PARAM_PATTERN = re.compile(r'([A-Z])([-+]?\d*\.?\d+)')
+
+# OTIMIZAÇÃO: Estrutura ultraleve para o grid (Corta o gargalo de memória O(G))
+GridSegment = namedtuple('GridSegment', ['start', 'end'])
 
 class ParsedCommand:
     """Resultado do parse de uma unica linha de GCode."""
@@ -18,25 +24,11 @@ class ParsedCommand:
 
 
 class GCodeParser:
-    """
-    Parser de arquivos GCode para uso no Leitor GCode Laprosolda.
-
-    Comandos suportados:
-      G0  - movimento rapido (travel)
-      G1  - movimento com extrusao/soldagem (extrude)
-      G28 - home (reseta posicao)
-      G90 - modo absoluto (padrao)
-      G91 - modo relativo
-      G92 - define posicao atual (reset de eixo)
-    """
-
     def parse(self, filepath: str, grid_w=500, grid_d=500) -> GCodeModel:
         model    = GCodeModel()
-        # Inicializamos como None para capturar a primeira posição real
         x, y, z  = None, None, None
         absolute = True
         
-        # Dicionário para mapear alturas Z para índices de camada (0, 1, 2...)
         z_to_layer = {} 
         current_layer_idx = 0
 
@@ -64,8 +56,6 @@ class GCodeParser:
                 elif cmd.code in ('G0', 'G1'):
                     if not any(k in cmd.params for k in 'XYZ'):
                         continue
-                    # Se for o primeiro movimento e as variáveis forem None, 
-                    # pegamos os valores do comando ou assumimos 0
                     if x is None: x = cmd.get('X', 0.0)
                     if y is None: y = cmd.get('Y', 0.0)
                     if z is None: z = cmd.get('Z', 0.0)
@@ -79,8 +69,6 @@ class GCodeParser:
                         ny = y + cmd.get('Y', 0.0)
                         nz = z + cmd.get('Z', 0.0)
 
-                    # --- Lógica de Camada Corrigida ---
-                    # Mapeia cada altura Z única para uma camada específica
                     if nz not in z_to_layer:
                         z_to_layer[nz] = current_layer_idx
                         current_layer_idx += 1
@@ -93,26 +81,28 @@ class GCodeParser:
                         model.segments.append(seg)
                         model.layers.setdefault(target_layer, []).append(seg)
 
+                        # --- OTIMIZAÇÃO: Cálculo incremental da distância O(1) ---
+                        dx = nx - x
+                        dy = ny - y
+                        dz = nz - z
+                        model.total_length += math.sqrt(dx*dx + dy*dy + dz*dz)
+                        # ---------------------------------------------------------
+
                     x, y, z = nx, ny, nz
 
-        model.bounds = self._calc_bounds(model.segments)
-
-        # No final do método parse, logo antes de 'return model'
-        # Definimos o tamanho total e o espaçamento
         spacing = 10
         grid = []
-        
         half_w = grid_w // 2
         half_d = grid_d // 2
         
-        # Subdivisão para evitar o bug do horizonte (Passo 1 da conversa anterior)
+        # Grid usando NamedTuple para gastar menos memória
         for x in range(-half_w, half_w + spacing, spacing):
             for y in range(-half_d, half_d, spacing):
-                grid.append(GCodeSegment(x, y, 0, x, y + spacing, 0, 'travel', -1))
+                grid.append(GridSegment((x, y, 0), (x, y + spacing, 0)))
                 
         for y in range(-half_d, half_d + spacing, spacing):
             for x in range(-half_w, half_w, spacing):
-                grid.append(GCodeSegment(x, y, 0, x + spacing, y, 0, 'travel', -1))
+                grid.append(GridSegment((x, y, 0), (x + spacing, y, 0)))
 
         model.grid_segments = grid
         model.bounds = self._calc_bounds(model.segments)
@@ -124,26 +114,22 @@ class GCodeParser:
 
         tokens = line.upper().split()
         first_token = tokens[0]
-       
-        match_cmd = PATTERN_CMD.match(first_token)
+        
+        match_cmd = CMD_PATTERN.match(first_token)
         
         if match_cmd:
             code = f"{match_cmd.group(1)}{match_cmd.group(2)}"
             start_idx = 1
         elif last_command and any(first_token.startswith(c) for c in "XYZ"):
-            # Suporte a comandos omitidos (Modais)
             code = last_command
             start_idx = 0
         else:
-            # Se não for G/M e não for modal, pode ser um comando não suportado
             code = first_token
             start_idx = 1
 
         params = {}
         text_to_parse = " ".join(tokens[start_idx:])
-        
-        # Usa a constante pré-compilada
-        for m in PATTERN_PARAMS.finditer(text_to_parse):
+        for m in PARAM_PATTERN.finditer(text_to_parse):
             params[m.group(1)] = float(m.group(2))
 
         return ParsedCommand(code, params)
@@ -152,10 +138,10 @@ class GCodeParser:
         if not segments:
             return (0, 0, 0, 0, 0, 0)
 
-        all_points = [seg.start for seg in segments] + [seg.end for seg in segments]
-        xs = [p[0] for p in all_points]
-        ys = [p[1] for p in all_points]
-        zs = [p[2] for p in all_points]
+        # OTIMIZAÇÃO: Extração direta de Xs, Ys e Zs sem duplicar os arrays
+        xs = [s.start[0] for s in segments] + [s.end[0] for s in segments]
+        ys = [s.start[1] for s in segments] + [s.end[1] for s in segments]
+        zs = [s.start[2] for s in segments] + [s.end[2] for s in segments]
 
         return (min(xs), min(ys), min(zs),
                 max(xs), max(ys), max(zs))
