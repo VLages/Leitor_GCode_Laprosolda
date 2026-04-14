@@ -1,6 +1,4 @@
-import os
 import sys
-import json
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QFileDialog, QMessageBox,
     QCheckBox, QVBoxLayout,
