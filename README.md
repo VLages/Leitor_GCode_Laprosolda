@@ -47,6 +47,7 @@ Segue a lista de tópicos que realizei hoje
 Segue a Lista dos tópicos que precisam ser realizados:
 
 - Implementar a função de ter um substrato e fixadores costumisaveis (Baixa prioridade os fixadores)
+- Mudar software para C++ e OpenGL
 
 ## Dia 5
 
@@ -70,3 +71,6 @@ Feitos desse dia:
 ## Dia 7
 
 - Foi implementado um Cube Viewer no lugar do Axis onde só mostrava os eixos X, Y, Z, agora está mais intuitivo de visualizar diferentes perspectivas da peça
+- Foi implementado a opção de ser colocado um substrado sob a renderização do GCode, onde ele sempre surgira no [0,0,0] e com uma altura fixa de 5 mm, porém o usuário pode mudar o comprimento dos eixos X e Y manulamente.
+- Foram feitas analises de Big O para identificar gargalhos de FPS e de memória do software, as soluções para melhorar a otimização foram iplementadas.
+> Nota: É importante ressaltar que o software ainda está travando bastante, posteriormente será feito uma mudança para C++ e OpenGL, já que os gargalhos de processamento estão relacionados com o python e com PyQt5
