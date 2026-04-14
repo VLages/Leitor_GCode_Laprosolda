@@ -47,7 +47,6 @@ Segue a lista de tópicos que realizei hoje
 Segue a Lista dos tópicos que precisam ser realizados:
 
 - Implementar a função de ter um substrato e fixadores costumisaveis (Baixa prioridade os fixadores)
-- Implementar cubo de visualização das fases arestas e quinas apenas por clicks (Igual dos outros softwares de CAD)
 
 ## Dia 5
 
@@ -67,3 +66,7 @@ Feitos desse dia:
 - Agora toda vez ao abrir um GCode novo, a opção de ver objeto completo vai estar selecionada
 - Posição inicial da câmera ajustada
 - A movimentação da câmera foi ajustada, deixou de ser uma movimentação primitiva agora parece uma movimentação profissional de um programa de CAD. (Porém após essa implementação o programa pareceu ficar mais travado o renderizar maiores quantidades de linhas. Mas vizualizando a peça por camadas, o programa deixa de ficar travado)
+
+## Dia 7
+
+- Foi implementado um Cube Viewer no lugar do Axis onde só mostrava os eixos X, Y, Z, agora está mais intuitivo de visualizar diferentes perspectivas da peça

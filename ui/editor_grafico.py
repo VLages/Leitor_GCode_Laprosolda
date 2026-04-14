@@ -6,6 +6,9 @@ class ToggleSwitch(QtWidgets.QAbstractButton):
     """Toggle switch estilo iOS para dark/light mode."""
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.substrate_enabled = False
+        self.substrate_w = 150
+        self.substrate_d = 150
         self.setCheckable(True)
         self.setFixedSize(44, 22)
         self._offset_val = 3

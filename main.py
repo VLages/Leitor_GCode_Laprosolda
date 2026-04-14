@@ -180,15 +180,24 @@ class ConfigDialog(QDialog):
         layout.addWidget(grp_grid)
 
         # Grupo Futuro (Desabilitado)
-        grp_future = QGroupBox("Elementos Adicionais (Em breve)")
-        future_lay = QVBoxLayout(grp_future)
-        chk_subst = QCheckBox("Adicionar Substrato")
-        chk_fix = QCheckBox("Adicionar Fixadores")
-        chk_subst.setEnabled(False)
-        chk_fix.setEnabled(False)
-        future_lay.addWidget(chk_subst)
-        future_lay.addWidget(chk_fix)
-        layout.addWidget(grp_future)
+        grp_subst = QGroupBox("Elementos Adicionais")
+        subst_lay = QVBoxLayout(grp_subst)
+        self.chk_subst = QCheckBox("Adicionar Substrato")
+        self.chk_subst.setChecked(getattr(parent, 'substrate_enabled', False))
+        self.sub_w = QLineEdit(str(getattr(parent, 'substrate_w', 100)))
+        self.sub_d = QLineEdit(str(getattr(parent, 'substrate_d', 100)))
+        
+        sub_form = QFormLayout()
+        sub_form.addRow("Largura (X) mm:", self.sub_w)
+        sub_form.addRow("Profundidade (Y) mm:", self.sub_d)
+        
+        subst_lay.addWidget(self.chk_subst)
+        subst_lay.addLayout(sub_form)
+        layout.addWidget(grp_subst)
+
+        self.chk_subst.toggled.connect(lambda b: (self.sub_w.setEnabled(b), self.sub_d.setEnabled(b)))
+        self.sub_w.setEnabled(self.chk_subst.isChecked())
+        self.sub_d.setEnabled(self.chk_subst.isChecked())
 
         # Conexões
         self.rad_custom.toggled.connect(lambda b: (self.custom_w.setEnabled(b), self.custom_d.setEnabled(b)))
@@ -199,6 +208,13 @@ class ConfigDialog(QDialog):
         layout.addWidget(btns)
 
     def _handle_accept(self):
+        # Captura dados do substrato
+        self.result_sub_enabled = self.chk_subst.isChecked()
+        try:
+            self.result_sub_w = int(self.sub_w.text())
+            self.result_sub_d = int(self.sub_d.text())
+        except:
+            self.result_sub_w, self.result_sub_d = 100, 100
         if self.rad1.isChecked(): 
             self.result_w, self.result_d = 1000, 1000
         elif self.rad2.isChecked(): 
@@ -606,14 +622,22 @@ class editor_grafico(QDialog):
     def abrir_configuracoes(self):
         dlg = ConfigDialog(self.grid_w, self.grid_d, self)
         if dlg.exec_():
+            self.parar_simulacao()
+            self.ui.objetoRadio.setChecked(True)
             self.grid_w = dlg.result_w
             self.grid_d = dlg.result_d
+
+            self.substrate_enabled = dlg.result_sub_enabled
+            self.substrate_w = dlg.result_sub_w
+            self.substrate_d = dlg.result_sub_d
+
+            self.viewer.substrate_enabled = self.substrate_enabled
+            self.viewer.substrate_w = self.substrate_w
+            self.viewer.substrate_d = self.substrate_d
             if hasattr(self, 'current_file_path'): 
                 self.recarregar_modelo()
             else:
-                QMessageBox.information(self, "Configuração Salva", 
-                                      f"Bancada ajustada para {self.grid_w}x{self.grid_d}mm.\n"
-                                      "O grid será atualizado ao carregar um arquivo.")
+                QMessageBox.information(self, "Configuração Salva. O grid será atualizado ao carregar um arquivo.")
 
     def recarregar_modelo(self):
         try:
