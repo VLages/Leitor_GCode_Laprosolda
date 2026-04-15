@@ -44,11 +44,6 @@ Segue a lista de tópicos que realizei hoje
 - Agora o boltão de voltar realmente le o código de trás pra frente em vez de apenas voltar uma linha do código
 - Foi Adicionado um slider entre os botões de multi-uso e o viewer, e um outro slider entre o editor de texto GCode e o viewer, podendo controlar melhor o tamanho da renderização.
 
-Segue a Lista dos tópicos que precisam ser realizados:
-
-- Implementar a função de ter um substrato e fixadores costumisaveis (Baixa prioridade os fixadores)
-- Mudar software para C++ e OpenGL
-
 ## Dia 5
 
 Feitos desse dia:
@@ -78,3 +73,8 @@ Feitos desse dia:
 ## Dia 8
 
 - Foi adicionado um sistema de alerta caso o substrato esteja menor que os limites da peça, tal sistema que poderá ser utilizado posteriormente para os fixadores, caso eles invadam o espaço do GCode.
+- Avancei bastante com a implementação do OpenGL, conseguir fazer o software renderizar com essa nova biblioteca, mas ainda faltam muitos ajustes para ficar igual o resultado de antes. Como proximos passos, documentarei aqui o que precisa ser feito:
+    - Ajustar o Cube Viewer que está com as faces e com a matrix de rotação invertido
+    - Arrumar as linhas de extrução e do travel, colocar suas respectiveis transparencias e ordem de prioridade ao aparecem no programa (linhas que ainda serão lidas pelo código estão se sobrepondo as linhas que o código está lendo)
+    - Concertar o mal funcionamento do alerta do substrato e melhorar a visualização das bordas do substrato
+    - Deixar as linhas do grid mais invisiveis (estão atrapalhando muito na visualização da altura da primeira camada)
