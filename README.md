@@ -77,4 +77,4 @@ Feitos desse dia:
 
 ## Dia 8
 
-- Foi adicionado um sistema de lerta caso o substrato esteja menor que os limites da peça, tal sistema que poderá ser utilizado posteriormente para os fixadores, caso eles invadam o espaço do GCode.
+- Foi adicionado um sistema de alerta caso o substrato esteja menor que os limites da peça, tal sistema que poderá ser utilizado posteriormente para os fixadores, caso eles invadam o espaço do GCode.
