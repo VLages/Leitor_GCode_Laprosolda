@@ -8,11 +8,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
 
-
 from ui.editor_grafico import Ui_editor_grafico
 from motor_3d.gcode_parser import GCodeParser
 from motor_3d.render.viewer import GCodeViewer3D
-
 
 # ────────────────────────────────────────────────────────────────────────────
 # Temas
@@ -261,7 +259,6 @@ class GCodeLoaderThread(QThread):
         except Exception as e:
             self.error.emit(str(e))
 
-
 # ────────────────────────────────────────────────────────────────────────────
 # Janela principal
 # ────────────────────────────────────────────────────────────────────────────
@@ -280,8 +277,6 @@ class editor_grafico(QDialog):
             Qt.WindowCloseButtonHint
         )
 
-        
-
         self.parser = GCodeParser()
         self.model  = None
 
@@ -295,9 +290,6 @@ class editor_grafico(QDialog):
         self.viewer.on_layer_changed   = self._on_layer_changed
         self.viewer.fps_changed.connect(self.atualizar_titulo_fps)
 
-        # Aplica cores salvas no cache
-        self.viewer.color_extrude = QColor(34, 103, 252)   # azul do tema (#2267fc)
-        self.viewer.color_travel  = QColor(220, 60, 60)    # vermelho confortavel G0
         self.viewer.show_travel   = True
 
         # Aplica tema inicial
@@ -365,11 +357,15 @@ class editor_grafico(QDialog):
         self.viewer.color_background = t["viewer_bg"]
         self.viewer.dark_mode = dark
         if dark:
+            self.viewer.color_extrude = QColor(34, 103, 252)   
+            self.viewer.color_travel  = QColor(220, 60, 60, 100)
             self.viewer.color_extrude_old = QColor( 20,  50, 110)
             self.viewer.color_travel_old  = QColor(100,  25,  25)
             self.viewer.color_extrude_dim = QColor( 15,  38,  85)
             self.viewer.color_travel_dim  = QColor( 80,  20,  20)
         else:
+            self.viewer.color_extrude = QColor(14, 83, 222)   
+            self.viewer.color_travel  = QColor(220, 60, 60, 100)
             self.viewer.color_extrude_old = QColor(175, 205, 255)
             self.viewer.color_travel_old  = QColor(255, 160, 160)
             self.viewer.color_extrude_dim = QColor(205, 225, 255)
@@ -379,10 +375,6 @@ class editor_grafico(QDialog):
         # Atualiza cor de acento dos labels de camada/linha
         accent = t["accent"]
         self.ui.lbl_layer.setStyleSheet(f"color: {accent}; font-size: 13px; min-width: 44px;")
-
-    # ────────────────────────────────────────────────────────────────────────
-    # Importar GCode
-    # ────────────────────────────────────────────────────────────────────────
 
     # ────────────────────────────────────────────────────────────────────────
     # Importar GCode

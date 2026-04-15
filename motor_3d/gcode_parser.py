@@ -135,13 +135,14 @@ class GCodeParser:
         return ParsedCommand(code, params)
 
     def _calc_bounds(self, segments):
-        if not segments:
+        extrude_segs = [s for s in segments if s.type == 'extrude']
+        if not extrude_segs:
             return (0, 0, 0, 0, 0, 0)
 
         # OTIMIZAÇÃO: Extração direta de Xs, Ys e Zs sem duplicar os arrays
-        xs = [s.start[0] for s in segments] + [s.end[0] for s in segments]
-        ys = [s.start[1] for s in segments] + [s.end[1] for s in segments]
-        zs = [s.start[2] for s in segments] + [s.end[2] for s in segments]
-
+        xs = [s.start[0] for s in extrude_segs] + [s.end[0] for s in extrude_segs]
+        ys = [s.start[1] for s in extrude_segs] + [s.end[1] for s in extrude_segs]
+        zs = [s.start[2] for s in extrude_segs] + [s.end[2] for s in extrude_segs]
+        
         return (min(xs), min(ys), min(zs),
                 max(xs), max(ys), max(zs))

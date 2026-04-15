@@ -74,3 +74,7 @@ Feitos desse dia:
 - Foi implementado a opção de ser colocado um substrado sob a renderização do GCode, onde ele sempre surgira no [0,0,0] e com uma altura fixa de 5 mm, porém o usuário pode mudar o comprimento dos eixos X e Y manulamente.
 - Foram feitas analises de Big O para identificar gargalhos de FPS e de memória do software, as soluções para melhorar a otimização foram iplementadas.
 > Nota: É importante ressaltar que o software ainda está travando bastante, posteriormente será feito uma mudança para C++ e OpenGL, já que os gargalhos de processamento estão relacionados com o python e com PyQt5
+
+## Dia 8
+
+- Foi adicionado um sistema de lerta caso o substrato esteja menor que os limites da peça, tal sistema que poderá ser utilizado posteriormente para os fixadores, caso eles invadam o espaço do GCode.

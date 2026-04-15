@@ -637,6 +637,7 @@ class GCodeViewer3D(QWidget):
         
         # Desenha o Substrato de 5mm por baixo da peça (se habilitado)
         self._draw_substrate(painter)
+        self._draw_substrate_warning(painter)
         
         # Desenha o Grid da bancada e as linhas do GCode por cima
         self._draw_segments_batched(painter)
@@ -743,14 +744,21 @@ class GCodeViewer3D(QWidget):
 
         total = len(self._verts_start)
 
+        # --- CORREÇÃO DA LÓGICA DE SOBREPOSIÇÃO DAS CAMADAS ---
         if self.current_layer >= 0:
-            if self.layer_isolated: layer_mask = self._layers_arr == self.current_layer
-            else: layer_mask = self._layers_arr <= self.current_layer
+            # A camada ativa é ESTRITAMENTE igual à camada atual
+            active_mask = self._layers_arr == self.current_layer
+            
+            if self.layer_isolated:
+                older_mask = np.zeros(total, dtype=bool) # Nenhuma camada antiga
+            else:
+                older_mask = self._layers_arr < self.current_layer # Apenas as estritamente menores
         else:
-            layer_mask = np.ones(total, dtype=bool)
+            # Modo Objeto Completo
+            active_mask = np.ones(total, dtype=bool)
+            older_mask = np.zeros(total, dtype=bool)
 
         if self._sim_index >= 0:
-            # 3. OTIMIZAÇÃO O(1): Usa o array cacheado em vez de np.arange()
             sim_done    = self._base_arange <= self._sim_index
             sim_pending = self._base_arange >  self._sim_index
         else:
@@ -768,27 +776,31 @@ class GCodeViewer3D(QWidget):
         extrude = self._types == 1
         travel  = self._types == 0
 
-        if self.current_layer >= 0 and not self.layer_isolated:
-            older = self._layers_arr < self.current_layer
-            draw_group(older & extrude, self.color_extrude_old)
-            if self.show_travel: draw_group(older & travel, self.color_travel_old)
+        # 1. Pinta as camadas antigas APENAS se elas já foram simuladas
+        draw_group(older_mask & extrude & sim_done, self.color_extrude_old)
+        if self.show_travel: 
+            draw_group(older_mask & travel & sim_done, self.color_travel_old)
 
+        # 2. Pinta o futuro (linhas da camada ativa ainda não simuladas)
         if self._sim_index >= 0:
-            draw_group(layer_mask & extrude & sim_pending, self.color_extrude_dim)
-            if self.show_travel: draw_group(layer_mask & travel & sim_pending, self.color_travel_dim)
+            draw_group(active_mask & extrude & sim_pending, self.color_extrude_dim)
+            if self.show_travel: 
+                draw_group(active_mask & travel & sim_pending, self.color_travel_dim)
 
-        if self.show_travel: draw_group(layer_mask & travel & sim_done, self.color_travel)
-        draw_group(layer_mask & extrude & sim_done, self.color_extrude)
+        # 3. Pinta o presente (linhas da camada ativa já simuladas)
+        draw_group(active_mask & extrude & sim_done, self.color_extrude)
+        if self.show_travel: 
+            draw_group(active_mask & travel & sim_done, self.color_travel)
 
+        # --------------------------------------------------------
+        
         # 4. Passa a matriz cacheada para o desenho da tocha
         if self._highlighted_seg is not None:
             hi = self._highlighted_seg
             if 0 <= hi < total and valid[hi]:
                 painter.setPen(QPen(QColor(0, 220, 255), 3, Qt.SolidLine))
                 painter.drawLine(int(pts0[hi,0]), int(pts0[hi,1]), int(pts1[hi,0]), int(pts1[hi,1]))
-                
-                # Pega a posição XYZ (índices 0, 1, 2) já com o offset de 5mm aplicado
-                pos_torch = self._verts_end[hi][:3]
+                pos_torch = self._verts_end[hi][:3] 
                 self._draw_torch_head(painter, pos_torch, cam_mat)
             
         if 0 <= self._sim_index < total:
@@ -796,8 +808,6 @@ class GCodeViewer3D(QWidget):
             if valid[i]:
                 painter.setPen(QPen(QColor(255, 255, 50), 3, Qt.SolidLine))
                 painter.drawLine(int(pts0[i,0]), int(pts0[i,1]), int(pts1[i,0]), int(pts1[i,1]))
-                
-                # Pega a posição XYZ (índices 0, 1, 2) já com o offset de 5mm aplicado
                 pos_torch = self._verts_end[i][:3]
                 self._draw_torch_head(painter, pos_torch, cam_mat)
 
@@ -940,10 +950,66 @@ class GCodeViewer3D(QWidget):
         ]
 
         # Estilo do Substrato (Cinza metálico semi-transparente)
-        color = QColor(130, 130, 140, 160)
-        painter.setPen(QPen(QColor(100, 100, 110), 1))
+        color = QColor(130, 130, 140)
+        painter.setPen(QPen(QColor(100, 100, 110)))
         
         for f in faces:
             poly = QPolygon([QPoint(pts[i,0], pts[i,1]) for i in f])
             painter.setBrush(QBrush(color))
             painter.drawPolygon(poly)
+
+    def _draw_substrate_warning(self, painter):
+        # Só executa se o substrato estiver ativo e o modelo existir
+        if not self.substrate_enabled or self.model is None or not self.model.bounds:
+            return
+
+        # Pega os limites extremos do GCode pré-calculados na memória em O(1)
+        xmin, ymin, zmin, xmax, ymax, zmax = self.model.bounds
+
+        # Limites físicos do substrato atual
+        sub_hw = self.substrate_w / 2.0
+        sub_hd = self.substrate_d / 2.0
+
+        # Verifica se alguma parte da peça cai fora dos limites do substrato
+        if (xmin < -sub_hw) or (xmax > sub_hw) or (ymin < -sub_hd) or (ymax > sub_hd):
+            
+            # 1. Desenha o Texto de Alerta na tela (Abaixo do FPS)
+            painter.setPen(QPen(QColor(255, 220, 0))) # Amarelo alerta
+            painter.setFont(QFont("Consolas", 10, QFont.Bold))
+            painter.drawText(10, 40, "⚠ AVISO: O GCode excede as dimensões do substrato!")
+
+            # 2. Calcula a "Extensão Fantasma"
+            # Cria uma caixa imaginária que envolve o substrato + o que faltou para a peça
+            req_xmin = min(xmin, -sub_hw)
+            req_xmax = max(xmax, sub_hw)
+            req_ymin = min(ymin, -sub_hd)
+            req_ymax = max(ymax, sub_hd)
+            hh = self.substrate_h 
+
+            # 8 Vértices da caixa de alerta
+            verts = np.array([
+                [req_xmax, req_ymax, hh, 1], [req_xmax, req_ymin, hh, 1], 
+                [req_xmin, req_ymin, hh, 1], [req_xmin, req_ymax, hh, 1], # Topo
+                [req_xmax, req_ymax,  0, 1], [req_xmax, req_ymin,  0, 1], 
+                [req_xmin, req_ymin,  0, 1], [req_xmin, req_ymax,  0, 1]  # Base
+            ])
+
+            # Projeta os 8 pontos usando o cache O(1)
+            pts, valid = self._project_batch(verts)
+            if not np.all(valid): return
+
+            faces = [
+                [0, 1, 2, 3], [4, 5, 6, 7],
+                [0, 1, 5, 4], [2, 3, 7, 6],
+                [0, 3, 7, 4], [1, 2, 6, 5]
+            ]
+
+            # Estilo do Alerta: Amarelo transparente com bordas tracejadas
+            ghost_color = QColor(255, 220, 0, 30)  # Alpha 30 para ser translúcido
+            border_color = QColor(255, 220, 0, 150)
+            painter.setPen(QPen(border_color, 1, Qt.DashLine))
+            
+            for f in faces:
+                poly = QPolygon([QPoint(pts[i,0], pts[i,1]) for i in f])
+                painter.setBrush(QBrush(ghost_color))
+                painter.drawPolygon(poly)
