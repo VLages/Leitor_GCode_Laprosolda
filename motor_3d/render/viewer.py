@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QWidget 
 from PyQt5.QtGui import QPainter, QColor, QPen, QCursor, QFont, QBrush, QPolygon, QPixmap, QTransform, QPolygonF
 from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QLine, QPointF, pyqtSignal
 import time

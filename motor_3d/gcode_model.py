@@ -1,4 +1,4 @@
-class GCodeSegment:
+class GCodeSegment: 
     """Representa um unico segmento de movimento entre dois pontos."""
     def __init__(self, x0, y0, z0, x1, y1, z1, move_type, layer, line_number=0):
         self.start       = (x0, y0, z0)

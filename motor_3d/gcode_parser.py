@@ -1,4 +1,4 @@
-import re
+import re 
 import math
 from collections import namedtuple
 from .gcode_model import GCodeSegment, GCodeModel
@@ -143,6 +143,6 @@ class GCodeParser:
         xs = [s.start[0] for s in extrude_segs] + [s.end[0] for s in extrude_segs]
         ys = [s.start[1] for s in extrude_segs] + [s.end[1] for s in extrude_segs]
         zs = [s.start[2] for s in extrude_segs] + [s.end[2] for s in extrude_segs]
-        
+
         return (min(xs), min(ys), min(zs),
                 max(xs), max(ys), max(zs))
