@@ -78,3 +78,14 @@ Feitos desse dia:
     - Arrumar as linhas de extrução e do travel, colocar suas respectiveis transparencias e ordem de prioridade ao aparecem no programa (linhas que ainda serão lidas pelo código estão se sobrepondo as linhas que o código está lendo)
     - Concertar o mal funcionamento do alerta do substrato e melhorar a visualização das bordas do substrato
     - Deixar as linhas do grid mais invisiveis (estão atrapalhando muito na visualização da altura da primeira camada)
+
+## Dia 9
+
+- Foi corrigido o o Cube Viewer, agora ele gira acompanhando os movimentos certos da camera e representa o lado certo da peça (Tudo aplicado em OpenGL)
+- As linhas de extrução agora são mais visiveis e mais finas, assim como era na versão antiga em PyQt 5
+- O alerta do substrato está funcionando perfeitamente
+- As linhas do grid estão finas como um fio de cabelo, não atrapalhando a visualização da peça
+> Gostaria de enautecer a marca alcançada de 360 quadros por segundo nessa nova versão em OpenGL, onde antes ficava estaguinado em 15 quadros por segundo
+- Foi solucionado o problema de ajustar a velocidade, pois ao colocar o programa na velocidade maxima e voltar aos 50%, o programa ficava mais devagar do que estava antes.
+    - Um bug foi dectado, ao ativar o substrato as linhas que mostram as próximas linhas ao serem extrudadas e as que já foram lidas estãom ficam hiper finas quase invisiveis 
+    - Implementar a opção de colocar fixadores
