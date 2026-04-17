@@ -94,3 +94,4 @@ Feitos desse dia:
 
 - Foi corrigido o bug das linhas invisiveis
 - Ajustes nas cores do programa foram feitas afim de melhorar o maximo conforto do usuário
+- Reajustei os arquivos do repositório. Agora para testar o programa basta apenas baixar todos os arquivos e clicar duas vezes no arquivo mainGL.py
