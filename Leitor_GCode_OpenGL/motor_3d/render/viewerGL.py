@@ -302,6 +302,9 @@ class GCodeViewer3D(QOpenGLWidget):
 
         self._torch_verts = self._generate_torch_geometry()
 
+        self.clamps = [] # Lista que receberá os fixadores da interface
+        self._clamp_verts, self._clamp_h = self._generate_clamp_geometry()
+
         self._frame_count = 0
         self._last_fps_time = time.time()
         self._current_fps = 0.0
@@ -360,6 +363,7 @@ class GCodeViewer3D(QOpenGLWidget):
         gluLookAt(pos[0], pos[1], pos[2], target[0], target[1], target[2], 0, 0, 1)
 
         self._draw_substrate_gl()
+        self._draw_clamps_gl()
         show_warning_text = self._draw_substrate_warning_gl()
 
         # 1. DESENHA O GRID (Garante que a matriz de cores está desligada)
@@ -380,7 +384,6 @@ class GCodeViewer3D(QOpenGLWidget):
             self._update_colors_vbo()
             self._last_state_hash = state_hash
 
-        # 3. DESENHA O GCODE (Com a divisão de profundidade)
         # 3. DESENHA O GCODE (Com espessuras independentes)
         if hasattr(self, '_vbo_vertices') and hasattr(self, '_idx_ex_bg'):
             glEnableClientState(GL_VERTEX_ARRAY)
@@ -415,26 +418,34 @@ class GCodeViewer3D(QOpenGLWidget):
             glDisableClientState(GL_VERTEX_ARRAY)
             glLineWidth(1.0)
 
-        # 4. DESENHA A TOCHA
+        # 4. DESENHA A TOCHA E FIXADORES
         self._draw_torches_gl()
 
-        if self.dark_mode:
-            aviso = (255, 220, 0)
-        else:
-            aviso = (130, 0, 255)
-
-        # Textos 2D
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Cores de alerta baseadas no tema
+        aviso_color = QColor(255, 220, 0) if self.dark_mode else QColor(130, 0, 255)
+        painter.setPen(QPen(aviso_color))
+        painter.setFont(QFont("Consolas", 10, QFont.Bold))
+
+        y_offset = 40
         if show_warning_text:
-            painter.setPen(QPen(QColor(*aviso))) 
-            painter.setFont(QFont("Consolas", 10, QFont.Bold))
-            painter.drawText(10, 40, "⚠ AVISO: O GCode excede as dimensões do substrato!")
+            painter.drawText(10, y_offset, "⚠ AVISO: O GCode excede as dimensões do substrato!")
+            y_offset += 20
+            
+        if self._has_clamp_collision():
+            painter.drawText(10, y_offset, "⚠ COLISÃO: Trajetória do GCode atinge um fixador!")
             
         self._draw_hint(painter)
         self._update_fps()
         painter.end()
 
+    def _has_clamp_collision(self):
+        """Retorna True se qualquer fixador estiver em estado de colisão."""
+        if not getattr(self, 'substrate_enabled', False) or not getattr(self, 'clamps', []): 
+            return False
+        return any(c.get('collision', False) for c in self.clamps)
     # ─── PREPARAÇÃO DOS DADOS (VRAM) ────────────────────────────────────────
 
     def _precompute_geometry(self):
@@ -737,6 +748,140 @@ class GCodeViewer3D(QOpenGLWidget):
             draw_torch_3d(self._highlighted_seg, 0.0, 0.86, 1.0) # Azul Cyan
         if 0 <= self._sim_index < total_segs:
             draw_torch_3d(self._sim_index, 1.0, 1.0, 0.2) # Amarelo vibrante
+
+    def _generate_clamp_geometry(self):
+        """Gera o perfil de um retângulo com cantos vivos (20x30x10)."""
+        w, l, h = 20.0, 30.0, 10.0
+        hw, hl = w / 2, l / 2
+        
+        # Apenas os 4 vértices exatos do bloco retangular
+        profile = [
+            (hw, hl),   # Topo-Direita
+            (-hw, hl),  # Topo-Esquerda
+            (-hw, -hl), # Base-Esquerda
+            (hw, -hl)   # Base-Direita
+        ]
+                
+        return np.array(profile, dtype=np.float32), h
+    
+    def set_clamps(self, clamps):
+        """Atualiza os fixadores e recalcula colisões imediatamente."""
+        self.clamps = clamps
+        self._check_clamp_collisions()
+        self._dirty = True
+
+    def _check_clamp_collisions(self):
+        """Verifica se alguma linha do GCode atravessa os fixadores usando Matemática Vetorial O(1)."""
+        if not getattr(self, 'clamps', []) or not hasattr(self, '_vertex_array'):
+            return
+            
+        # Pega o começo e o fim de todas as linhas do GCode (Extrusão e Travel)
+        starts = self._vertex_array[0::2]
+        ends   = self._vertex_array[1::2]
+        
+        # Cria pontos intermediários virtuais para detectar linhas de travel muito longas
+        pts = np.vstack([starts, ends, starts + (ends - starts) * 0.5])
+        
+        for c in self.clamps:
+            c['collision'] = False
+            dx = pts[:, 0] - float(c['x'])
+            dy = pts[:, 1] - float(c['y'])
+            dz = pts[:, 2]
+            rad = math.radians(-float(c['angle']))
+            
+            # Gira todo o GCode inversamente para se alinhar com a rotação do fixador
+            lx = dx * math.cos(rad) - dy * math.sin(rad)
+            ly = dx * math.sin(rad) + dy * math.cos(rad)
+            
+            # Caixa do fixador (20x30x10) -> Meias distâncias: X=10, Y=15. (+0.5mm de margem)
+            mask = (np.abs(lx) <= 10.5) & (np.abs(ly) <= 15.5) & (dz >= -0.5) & (dz <= 10.5)
+            
+            if np.any(mask): # Se apenas 1 ponto entrar na caixa, o fixador acende!
+                c['collision'] = True
+
+    def _draw_clamps_gl(self):
+        """Desenha os fixadores com efeito de transparência e sistema de alerta de colisão."""
+        if not getattr(self, 'substrate_enabled', False) or not getattr(self, 'clamps', []): 
+            return
+
+        if self.dark_mode:
+            cinza_metalico = (80/255, 80/255, 100/255, 0.4) 
+            cinza_borda    = (30/255, 30/255,  40/255, 0.6) 
+            alerta_metalico = (255/255, 220/255, 0/255, 0.15) # Amarelo translúcido
+            alerta_borda    = (255/255, 220/255, 0/255, 0.8)  # Borda amarela forte
+        else:
+            cinza_metalico = (140/255, 140/255, 160/255, 0.4)
+            cinza_borda    = (80/255,  80/255,  100/255, 0.6)
+            alerta_metalico = (130/255, 0/255, 255/255, 0.15) # Roxo translúcido
+            alerta_borda    = (130/255, 0/255, 255/255, 0.8)  # Borda roxa forte
+
+        glEnable(GL_DEPTH_TEST)
+        glDepthMask(GL_FALSE) 
+        glEnable(GL_POLYGON_OFFSET_FILL)
+        glPolygonOffset(-1.0, -1.0) 
+
+        profile = self._clamp_verts.tolist() if hasattr(self._clamp_verts, 'tolist') else self._clamp_verts
+        h = float(self._clamp_h)
+
+        # 1. CAMADA SÓLIDA (Paredes de Vidro)
+        for clamp in self.clamps:
+            glPushMatrix()
+            glTranslatef(float(clamp['x']), float(clamp['y']), 0.0)
+            glRotatef(float(clamp['angle']), 0, 0, 1)
+
+            # --- A MÁGICA VISUAL DA COLISÃO ---
+            if clamp.get('collision', False):
+                glColor4f(*alerta_metalico)
+            else:
+                glColor4f(*cinza_metalico)
+
+            glBegin(GL_POLYGON) 
+            for x, y in profile[::-1]: glVertex3f(float(x), float(y), 0.0)
+            glEnd()
+            glBegin(GL_POLYGON)
+            for x, y in profile: glVertex3f(float(x), float(y), h)
+            glEnd()
+            glBegin(GL_QUAD_STRIP)
+            for i in range(len(profile) + 1):
+                px, py = profile[i % len(profile)]
+                glVertex3f(float(px), float(py), h)
+                glVertex3f(float(px), float(py), 0.0)
+            glEnd()
+            glPopMatrix()
+
+        glDepthMask(GL_TRUE) 
+        glDisable(GL_POLYGON_OFFSET_FILL)
+
+        # 2. CAMADA WIREFRAME (Bordas Estruturais)
+        for clamp in self.clamps:
+            glPushMatrix()
+            glTranslatef(float(clamp['x']), float(clamp['y']), 0.0)
+            glRotatef(float(clamp['angle']), 0, 0, 1)
+
+            # --- A MÁGICA VISUAL DA COLISÃO ---
+            if clamp.get('collision', False):
+                glColor4f(*alerta_borda)
+            else:
+                glColor4f(*cinza_borda)
+
+            glLineWidth(1.0)
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+            
+            glBegin(GL_POLYGON)
+            for x, y in profile[::-1]: glVertex3f(float(x), float(y), 0.0)
+            glEnd()
+            glBegin(GL_POLYGON)
+            for x, y in profile: glVertex3f(float(x), float(y), h)
+            glEnd()
+            glBegin(GL_QUAD_STRIP)
+            for i in range(len(profile) + 1):
+                px, py = profile[i % len(profile)]
+                glVertex3f(float(px), float(py), h)
+                glVertex3f(float(px), float(py), 0.0)
+            glEnd()
+            
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+            glPopMatrix()
     # ─── CONTROLES DE INTERFACE E EVENTOS ───────────────────────────────────
 
     def set_model(self, model: GCodeModel, preserve_camera=False):
@@ -758,6 +903,7 @@ class GCodeViewer3D(QOpenGLWidget):
             self._fit_view()
 
         self._precompute_geometry()
+        self._check_clamp_collisions()
         self._reposition_gizmo()
         self._dirty = True
         self.update()

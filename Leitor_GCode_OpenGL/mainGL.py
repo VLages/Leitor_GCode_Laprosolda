@@ -1,12 +1,14 @@
 import sys 
+import math
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QFileDialog, QMessageBox,
     QCheckBox, QVBoxLayout,
     QLabel, QDialogButtonBox, QGroupBox, 
-    QRadioButton, QLineEdit, QFormLayout
+    QRadioButton, QLineEdit, QFormLayout,
+    QWidget, QPushButton
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QColor
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRectF
+from PyQt5.QtGui import QPainter, QColor, QPen, QBrush
 
 from ui.editor_graficoGL import Ui_editor_grafico
 from motor_3d.gcode_parserGL import GCodeParser
@@ -137,45 +139,39 @@ def build_stylesheet(t: dict) -> str:
 # ────────────────────────────────────────────────────────────────────────────
 
 class ConfigDialog(QDialog):
-    def __init__(self, current_w, current_d, parent=None):
+    def __init__(self, current_w, current_d, model_bounds, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Configurações de Bancada - Laprosolda")
         self.setModal(True)
         self.resize(350, 400)
         
-        self.result_w = current_w
-        self.result_d = current_d
-
+        self.model_bounds = model_bounds
+        self.clamps = getattr(parent, 'clamps', []).copy() # Puxa da janela principal
+        
+        self.result_w, self.result_d = current_w, current_d
         layout = QVBoxLayout(self)
 
-        # Grupo de Tamanho do Grid
         grp_grid = QGroupBox("Dimensões do Grid (Bancada)")
         grid_lay = QVBoxLayout(grp_grid)
-
         self.rad1 = QRadioButton("1000 x 1000 mm (1m x 1m)")
         self.rad2 = QRadioButton("700 x 500 mm (70cm x 50cm)")
         self.rad3 = QRadioButton("1130 x 800 mm (113cm x 80cm)")
         self.rad_custom = QRadioButton("Customizado (mm):")
+        
+        grid_lay.addWidget(self.rad1); grid_lay.addWidget(self.rad2)
+        grid_lay.addWidget(self.rad3); grid_lay.addWidget(self.rad_custom)
 
-        grid_lay.addWidget(self.rad1)
-        grid_lay.addWidget(self.rad2)
-        grid_lay.addWidget(self.rad3)
-        grid_lay.addWidget(self.rad_custom)
-
-        # Campos customizados
         self.custom_w = QLineEdit(str(current_w))
         self.custom_d = QLineEdit(str(current_d))
-        self.custom_w.setEnabled(False)
-        self.custom_d.setEnabled(False)
+        self.custom_w.setEnabled(False); self.custom_d.setEnabled(False)
         
         form = QFormLayout()
         form.addRow("Largura X:", self.custom_w)
         form.addRow("Profundidade Y:", self.custom_d)
         grid_lay.addLayout(form)
-
         layout.addWidget(grp_grid)
 
-        # Grupo Futuro (Desabilitado)
+        # --- GRUPO DO SUBSTRATO E FIXADORES ---
         grp_subst = QGroupBox("Elementos Adicionais")
         subst_lay = QVBoxLayout(grp_subst)
         self.chk_subst = QCheckBox("Adicionar Substrato")
@@ -187,15 +183,18 @@ class ConfigDialog(QDialog):
         sub_form.addRow("Largura (X) mm:", self.sub_w)
         sub_form.addRow("Profundidade (Y) mm:", self.sub_d)
         
+        self.btn_posicionar = QPushButton("Posicionar Fixadores...")
+        self.btn_posicionar.clicked.connect(self.abrir_posicionador)
+        
         subst_lay.addWidget(self.chk_subst)
         subst_lay.addLayout(sub_form)
+        subst_lay.addWidget(self.btn_posicionar)
         layout.addWidget(grp_subst)
 
-        self.chk_subst.toggled.connect(lambda b: (self.sub_w.setEnabled(b), self.sub_d.setEnabled(b)))
-        self.sub_w.setEnabled(self.chk_subst.isChecked())
-        self.sub_d.setEnabled(self.chk_subst.isChecked())
-
-        # Conexões
+        # Conexões Dinâmicas
+        self.chk_subst.toggled.connect(lambda b: (self.sub_w.setEnabled(b), self.sub_d.setEnabled(b), self._validate_substrate()))
+        self.sub_w.textChanged.connect(self._validate_substrate)
+        self.sub_d.textChanged.connect(self._validate_substrate)
         self.rad_custom.toggled.connect(lambda b: (self.custom_w.setEnabled(b), self.custom_d.setEnabled(b)))
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -203,8 +202,43 @@ class ConfigDialog(QDialog):
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
 
+        self._validate_substrate() # Validação Inicial
+
+    def _validate_substrate(self):
+        """Desativa o botão de fixadores se o substrato for menor que a peça."""
+        is_valid = True
+        try:
+            sw, sd = float(self.sub_w.text()), float(self.sub_d.text())
+        except ValueError:
+            is_valid = False
+            sw = sd = 0
+            
+        if hasattr(self, '_last_sw') and hasattr(self, '_last_sd'):
+            if self._last_sw != sw or self._last_sd != sd:
+                self.clamps = [] 
+                
+        self._last_sw = sw
+        self._last_sd = sd
+        # ----------------------------------------------------------------------------------
+            
+        if is_valid and self.chk_subst.isChecked() and self.model_bounds:
+            xmin, ymin, zmin, xmax, ymax, zmax = self.model_bounds
+            hw, hd = sw / 2.0, sd / 2.0
+            if (xmin < -hw) or (xmax > hw) or (ymin < -hd) or (ymax > hd):
+                is_valid = False 
+                
+        self.btn_posicionar.setEnabled(self.chk_subst.isChecked() and is_valid)
+
+    def abrir_posicionador(self):
+        try:
+            sw, sd = float(self.sub_w.text()), float(self.sub_d.text())
+        except: return
+        
+        dlg = ClampPlacementDialog(sw, sd, self.model_bounds, self.clamps, self)
+        if dlg.exec_():
+            self.clamps = dlg.canvas.clamps # Salva a modificação feita no mapa 2D
+
     def _handle_accept(self):
-        # Captura dados do substrato
         self.result_sub_enabled = self.chk_subst.isChecked()
         try:
             self.result_sub_w = int(self.sub_w.text())
@@ -224,8 +258,170 @@ class ConfigDialog(QDialog):
             except ValueError:
                 QMessageBox.warning(self, "Erro", "Por favor, insira valores numéricos válidos.")
                 return 
+        self.accept()
 
-        self.accept() 
+    def abrir_posicionador(self):
+        try:
+            sw, sd = float(self.sub_w.text()), float(self.sub_d.text())
+        except ValueError: 
+            return
+        
+        # Pega a referência do viewer da janela principal (parent)
+        viewer_ref = self.parent().viewer if hasattr(self.parent(), 'viewer') else None
+        
+        # Passa as variáveis sw, sd e o viewer para o Dialog
+        dlg = ClampPlacementDialog(sw, sd, self.model_bounds, self.clamps, viewer_ref, self)
+        
+        if dlg.exec_():
+            self.clamps = dlg.canvas.clamps # Salva a modificação feita no mapa 2D
+
+# ────────────────────────────────────────────────────────────────────────────
+# Editor 2D de Fixadores
+# ────────────────────────────────────────────────────────────────────────────
+class ClampEditorWidget(QWidget):
+    def __init__(self, sub_w, sub_d, bounds, clamps, viewer=None): # Adicionado viewer
+        super().__init__()
+        self.setMouseTracking(True)
+        self.sub_w, self.sub_d = sub_w, sub_d
+        self.bounds = bounds
+        self.clamps = clamps.copy()
+        self.viewer = viewer # Salva a referência para usar a matemática do NumPy
+        self.hover_clamp = None
+        self.setMinimumSize(450, 450)
+        
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.fillRect(self.rect(), QColor(25, 25, 35)) 
+        
+        cx, cy = self.width() / 2, self.height() / 2
+        s = min((self.width() - 80) / max(1, self.sub_w), (self.height() - 80) / max(1, self.sub_d))
+        
+        sw, sd = self.sub_w * s, self.sub_d * s
+        p.setBrush(QColor(100, 100, 120))
+        p.setPen(QPen(QColor(80, 80, 100), 2))
+        p.drawRect(QRectF(cx - sw/2, cy - sd/2, sw, sd))
+        
+        if self.bounds:
+            xmin, ymin, zmin, xmax, ymax, zmax = self.bounds
+            p.setBrush(QColor(34, 103, 252, 60))
+            p.setPen(QPen(QColor(34, 103, 252), 1, Qt.DashLine))
+            p.drawRect(QRectF(cx + xmin * s, cy - ymax * s, (xmax - xmin) * s, (ymax - ymin) * s))
+            
+        def draw_clamp(c, is_hover=False):
+            p.save()
+            p.translate(cx + c['x'] * s, cy - c['y'] * s)
+            p.rotate(-c['angle'])
+            cw, cd = 20 * s, 30 * s
+            
+            # Cores de alerta para o modo 2D
+            color_alert = QColor(255, 220, 0, 180) if not is_hover else QColor(255, 220, 0, 220)
+            
+            if is_hover:
+                if getattr(self, 'hover_valid', True):
+                    p.setBrush(QColor(100, 255, 100, 150))
+                    p.setPen(QPen(QColor(50, 200, 50), 2))
+                else:
+                    p.setBrush(QColor(255, 100, 100, 150))
+                    p.setPen(QPen(QColor(200, 50, 50), 2))
+            elif c.get('collision', False): # SE ESTIVER EM CONFLITO
+                p.setBrush(color_alert)
+                p.setPen(QPen(QColor(200, 150, 0), 2))
+            else:
+                p.setBrush(QColor(80, 80, 100))
+                p.setPen(QPen(QColor(40, 40, 50), 2))
+            
+            p.drawRect(QRectF(-cw/2, -cd/2, cw, cd))
+            p.restore()
+            
+        for c in self.clamps: draw_clamp(c)
+        if self.hover_clamp:  draw_clamp(self.hover_clamp, is_hover=True)
+
+    def mouseMoveEvent(self, event):
+        cx, cy = self.width() / 2, self.height() / 2
+        s = min((self.width() - 80) / max(1, self.sub_w), (self.height() - 80) / max(1, self.sub_d))
+        px, py = (event.x() - cx) / s, -(event.y() - cy) / s
+        hw, hd = self.sub_w / 2, self.sub_d / 2
+        
+        edges = [
+            (abs(py - hd), hd, max(-hw, min(hw, px)), 180),
+            (abs(py - (-hd)), -hd, max(-hw, min(hw, px)), 0),
+            (abs(px - hw), max(-hd, min(hd, py)), hw, 90),
+            (abs(px - (-hw)), max(-hd, min(hd, py)), -hw, -90)
+        ]
+        
+        min_dist, c_y, c_x, angle = min(edges, key=lambda e: e[0])
+        
+        if min_dist > 30:
+            self.hover_clamp = None
+        else:
+            self.hover_clamp = {'x': c_x, 'y': c_y, 'angle': angle}
+            # REAJUSTE: Verifica validade (colisão) para mudar a cor no PaintEvent
+            self.hover_valid = True
+            for c in self.clamps:
+                dist = math.hypot(c['x'] - c_x, c['y'] - c_y)
+                if dist < 20.0:
+                    self.hover_valid = False
+                    break
+                    
+        self.update()
+        
+    def mousePressEvent(self, event):
+            if event.button() == Qt.LeftButton and self.hover_clamp:
+                # --- PROTEÇÃO CONTRA SOBREPOSIÇÃO (Anti-Stacking) ---
+                pode_colocar = True
+                for c in self.clamps:
+                    # Calcula a distância física (em mm) entre os centros
+                    dist = math.hypot(c['x'] - self.hover_clamp['x'], c['y'] - self.hover_clamp['y'])
+                    
+                    # O fixador tem 20mm de largura. Se a distância for menor que isso, eles vão se bater.
+                    if dist < 20.0: 
+                        pode_colocar = False
+                        break
+                
+                if pode_colocar:
+                    self.clamps.append(self.hover_clamp)
+                # ----------------------------------------------------
+                
+            elif event.button() == Qt.RightButton:
+                cx, cy = self.width() / 2, self.height() / 2
+                s = min((self.width() - 80) / max(1, self.sub_w), (self.height() - 80) / max(1, self.sub_d))
+                px, py = (event.x() - cx) / s, -(event.y() - cy) / s
+                
+                for c in reversed(self.clamps): # Inverte para checar o último desenhado
+                    dx, dy = px - c['x'], py - c['y']
+                    rad = math.radians(-c['angle'])
+                    # Rotaciona o clique para alinhar com a geometria do fixador
+                    lx = dx * math.cos(rad) - dy * math.sin(rad)
+                    ly = dx * math.sin(rad) + dy * math.cos(rad)
+                    
+                    if abs(lx) <= 10 and abs(ly) <= 15: # Colisão com a caixa 20x30
+                        self.clamps.remove(c)
+                        break
+            if self.viewer:
+                self.viewer.clamps = self.clamps
+                self.viewer._check_clamp_collisions()
+            self.update()
+
+class ClampPlacementDialog(QDialog):
+    # Adicionamos o 'viewer' nos argumentos recebidos
+    def __init__(self, sub_w, sub_d, bounds, clamps, viewer, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Posicionamento de Fixadores - Laprosolda")
+        layout = QVBoxLayout(self)
+        
+        lbl = QLabel("<b>Botão Esquerdo:</b> Adicionar Fixador | <b>Botão Direito:</b> Remover Fixador<br>Passe o mouse próximo às bordas para visualizar.")
+        lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl)
+        
+        # Repassa o viewer para o Canvas (onde a colisão é calculada)
+        self.canvas = ClampEditorWidget(sub_w, sub_d, bounds, clamps, viewer)
+        layout.addWidget(self.canvas)
+        
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
 
 class GCodeLoaderThread(QThread):
     """
@@ -333,6 +529,7 @@ class editor_grafico(QDialog):
         self._set_controls_enabled(False)
 
         # Configurações
+        self.clamps = []
         self.ui.configbut.clicked.connect(self.abrir_configuracoes)
         self.grid_w = 500
         self.grid_d = 500
@@ -681,9 +878,15 @@ class editor_grafico(QDialog):
         self.setWindowTitle(f"Leitor GCode — Laprosolda | FPS: {fps}")
 
     def abrir_configuracoes(self):
-        dlg = ConfigDialog(self.grid_w, self.grid_d, self)
+        bnds = self.model.bounds if self.model else None
+        dlg = ConfigDialog(self.grid_w, self.grid_d, bnds, self) 
+        
         if dlg.exec_():
             self.parar_simulacao()
+
+            # Pega os fixadores da janela 2D
+            self.clamps = dlg.clamps
+
             self.grid_w = dlg.result_w
             self.grid_d = dlg.result_d
 
@@ -691,12 +894,19 @@ class editor_grafico(QDialog):
             self.substrate_w = dlg.result_sub_w
             self.substrate_d = dlg.result_sub_d
 
+            # Envia a lista de fixadores e aciona a verificação de colisão!
+            self.viewer.set_clamps(self.clamps)
+
             self.viewer.substrate_enabled = self.substrate_enabled
             self.viewer.substrate_w = self.substrate_w
             self.viewer.substrate_d = self.substrate_d
+
             if hasattr(self, 'current_file_path'): 
                 self._layer_backup = self.viewer.current_layer
                 self.recarregar_modelo()
+            
+            # Força o visualizador a redesenhar a tela com os novos fixadores
+            self.viewer._dirty = True
 
     def recarregar_modelo(self):
         if not hasattr(self, 'current_file_path'): 

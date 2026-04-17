@@ -2,7 +2,9 @@
 
 Olá, Rosa.
 
-Para visualizar o estágio atual do software, é necessário baixar os dois arquivos: “main.py” e “editor_grafico.py” (é importante que ambos estejam na mesma pasta). Em seguida, abra o arquivo “main.py” em um editor de texto (estou utilizando o VSCode) e execute-o normalmente, clicando no botão localizado no canto superior direito, “Run Python File”.
+Para visualizar o estágio atual do software é necessário baixar todos os arquivos e seus respectivos diretórios, extrair eles para fora do arquivo .zip e rodar o arquivo mainGL.py (Clique duas vezes em cima dele). Caso ocorra algum erro de inicialização, baixe as seguintes bibliotecas no terminal do computador:
+
+ ```pip install PyQt5 numpy PyOpenGL PyOpenGL_accelerate```
 
 ## Dia 1
 
@@ -95,3 +97,8 @@ Feitos desse dia:
 - Foi corrigido o bug das linhas invisiveis
 - Ajustes nas cores do programa foram feitas afim de melhorar o maximo conforto do usuário
 - Reajustei os arquivos do repositório. Agora para testar o programa basta apenas baixar todos os arquivos e clicar duas vezes no arquivo mainGL.py
+- A opção de colocar fixadores foi implementada com sucesso, agora basta apenas corrigir alguns bugs:
+    - Corrigir a aba de colocar fixadores para também ser ajustada para o light mode
+    - fixadores nas quinas do substrato podem ser colocados um dentro do outro (corrigir colisão das pontas com outros fixadores)
+    - O botão para alternar entre o modo Light e Dark fica um pouco bugado ao ser apertado pela primeira vez
+    - Com a adição dos fixadores o programa voltou a ficar pesado. Proxima etapa será focar na otimização
