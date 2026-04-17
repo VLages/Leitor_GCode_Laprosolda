@@ -89,3 +89,8 @@ Feitos desse dia:
 - Foi solucionado o problema de ajustar a velocidade, pois ao colocar o programa na velocidade maxima e voltar aos 50%, o programa ficava mais devagar do que estava antes.
     - Um bug foi dectado, ao ativar o substrato as linhas que mostram as próximas linhas ao serem extrudadas e as que já foram lidas estãom ficam hiper finas quase invisiveis 
     - Implementar a opção de colocar fixadores
+
+## Dia 10
+
+- Foi corrigido o bug das linhas invisiveis
+- Ajustes nas cores do programa foram feitas afim de melhorar o maximo conforto do usuário
