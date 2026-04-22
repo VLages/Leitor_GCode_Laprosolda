@@ -102,3 +102,10 @@ Feitos desse dia:
     - fixadores nas quinas do substrato podem ser colocados um dentro do outro (corrigir colisão das pontas com outros fixadores)
     - O botão para alternar entre o modo Light e Dark fica um pouco bugado ao ser apertado pela primeira vez
     - Com a adição dos fixadores o programa voltou a ficar pesado. Proxima etapa será focar na otimização
+
+## Dia 11
+
+- Novos testes foram feitos e o programa correspondeu muito bem tanto no meu computador de Desktop (mantendo estável em 120 FPS com o GCode mais pesado que eu tinha e todas as configurações ativadas) e no meu notebook que é mais fraco (mantendo estável em 50 FPS com o GCode mais pesado e todas as configurações ativadas). Caso seja necessário farei futuras atualizações para deixar o software mais otimizado.
+- Foi corrigido um bug envolvendo o botão de cancelar na aba de colocar fixadores. Agora apertar o botão de cancelar na aba de configurações ira realmente cancelar sua ação
+- Foi corrigido o bug do botão de mudar o tema do programa o ser clicado pela primeira vez
+- As cores da aba de posicionar os fixadores tiveram cores adaptadas para o tema claro também

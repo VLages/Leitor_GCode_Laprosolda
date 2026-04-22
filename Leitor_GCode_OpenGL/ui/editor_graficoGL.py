@@ -6,20 +6,27 @@ class ToggleSwitch(QtWidgets.QAbstractButton):
     """Toggle switch estilo iOS para dark/light mode."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.substrate_enabled = False
-        self.substrate_w = 150
-        self.substrate_d = 150
         self.setCheckable(True)
         self.setFixedSize(44, 22)
         self._offset_val = 3
         self._anim = QtCore.QPropertyAnimation(self, b"_offset", self)
         self._anim.setDuration(150)
+        self.toggled.connect(self._on_state_changed)
 
     def _get_offset(self): return self._offset_val
     def _set_offset(self, v):
         self._offset_val = v
         self.update()
     _offset = QtCore.pyqtProperty(int, _get_offset, _set_offset)
+
+    def _on_state_changed(self, checked):
+        target = 23 if checked else 3
+        if not self.isVisible():
+            self._set_offset(target)
+        else:
+            self._anim.setStartValue(self._offset_val)
+            self._anim.setEndValue(target)
+            self._anim.start()
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
@@ -34,7 +41,7 @@ class ToggleSwitch(QtWidgets.QAbstractButton):
         p.setRenderHint(QtGui.QPainter.Antialiasing)
         w, h = self.width(), self.height()
         # Track
-        track_color = QtGui.QColor(34, 103, 252) if self.isChecked() else QtGui.QColor(80, 80, 100)
+        track_color = QtGui.QColor(34, 103, 252) 
         p.setBrush(QtGui.QBrush(track_color))
         p.setPen(QtCore.Qt.NoPen)
         p.drawRoundedRect(0, 0, w, h, h//2, h//2)
@@ -42,7 +49,6 @@ class ToggleSwitch(QtWidgets.QAbstractButton):
         p.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255)))
         thumb_size = h - 6
         p.drawEllipse(self._offset_val, 3, thumb_size, thumb_size)
-
 
 class Ui_editor_grafico(object):
     def setupUi(self, Dialog):

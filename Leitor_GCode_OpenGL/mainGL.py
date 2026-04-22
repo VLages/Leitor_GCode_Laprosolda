@@ -7,8 +7,8 @@ from PyQt5.QtWidgets import (
     QRadioButton, QLineEdit, QFormLayout,
     QWidget, QPushButton
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRectF
-from PyQt5.QtGui import QPainter, QColor, QPen, QBrush
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRectF, QTimer
+from PyQt5.QtGui import QPainter, QColor, QPen
 
 from ui.editor_graficoGL import Ui_editor_grafico
 from motor_3d.gcode_parserGL import GCodeParser
@@ -112,16 +112,7 @@ def build_stylesheet(t: dict) -> str:
         border-color: {t['accent']};
     }}
     QCheckBox {{ spacing: 6px; color: {t['text']}; }}
-    QCheckBox::indicator {{
-        width: 14px; height: 14px;
-        border: 2px solid {t['border']};
-        border-radius: 3px;
-        background: {t['bg']};
-    }}
-    QCheckBox::indicator:checked {{
-        background: {t['accent']};
-        border-color: {t['accent']};
-    }}
+   
     QLabel {{ color: {t['text_dim']}; font-size: 11px; }}
     QGroupBox {{
         color: {t['text_dim']};
@@ -229,15 +220,6 @@ class ConfigDialog(QDialog):
                 
         self.btn_posicionar.setEnabled(self.chk_subst.isChecked() and is_valid)
 
-    def abrir_posicionador(self):
-        try:
-            sw, sd = float(self.sub_w.text()), float(self.sub_d.text())
-        except: return
-        
-        dlg = ClampPlacementDialog(sw, sd, self.model_bounds, self.clamps, self)
-        if dlg.exec_():
-            self.clamps = dlg.canvas.clamps # Salva a modificação feita no mapa 2D
-
     def _handle_accept(self):
         self.result_sub_enabled = self.chk_subst.isChecked()
         try:
@@ -266,15 +248,19 @@ class ConfigDialog(QDialog):
         except ValueError: 
             return
         
-        # Pega a referência do viewer da janela principal (parent)
         viewer_ref = self.parent().viewer if hasattr(self.parent(), 'viewer') else None
         
-        # Passa as variáveis sw, sd e o viewer para o Dialog
+        # --- CORREÇÃO DO BUG DO CANCELAR: Cria um backup seguro ---
+        backup_clamps = [c.copy() for c in self.clamps]
+        
         dlg = ClampPlacementDialog(sw, sd, self.model_bounds, self.clamps, viewer_ref, self)
         
         if dlg.exec_():
-            self.clamps = dlg.canvas.clamps # Salva a modificação feita no mapa 2D
-
+            self.clamps = [c.copy() for c in dlg.canvas.clamps]
+        else:
+            # Se cancelar, desfaz as alterações feitas ao vivo no motor 3D
+            if viewer_ref:
+                viewer_ref.set_clamps(backup_clamps)
 # ────────────────────────────────────────────────────────────────────────────
 # Editor 2D de Fixadores
 # ────────────────────────────────────────────────────────────────────────────
@@ -292,19 +278,45 @@ class ClampEditorWidget(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(self.rect(), QColor(25, 25, 35)) 
+        
+        # --- DETECÇÃO INTELIGENTE DO TEMA ---
+        is_dark = getattr(self.viewer, 'dark_mode', True) if self.viewer else True
+        
+        if is_dark:
+            c_bg = QColor(22, 22, 32)               # Fundo igual ao 3D Dark
+            c_sub_fill = QColor(100, 100, 120)      # Substrato escuro
+            c_sub_line = QColor(80, 80, 100)
+            c_clamp_fill = QColor(80, 80, 100)      # Fixador escuro
+            c_clamp_line = QColor(40, 40, 50)
+            c_alert_fill = QColor(255, 220, 0, 180) # Alerta Amarelo
+            c_alert_line = QColor(200, 150, 0)
+            c_alert_hover = QColor(255, 220, 0, 220)
+        else:
+            c_bg = QColor(240, 240, 248)            # Fundo igual ao 3D Light
+            c_sub_fill = QColor(180, 180, 200)      # Substrato claro
+            c_sub_line = QColor(140, 140, 160)
+            c_clamp_fill = QColor(140, 140, 160)    # Fixador claro
+            c_clamp_line = QColor(100, 100, 120)
+            c_alert_fill = QColor(130, 0, 255, 180) # Alerta Roxo
+            c_alert_line = QColor(100, 0, 200)
+            c_alert_hover = QColor(130, 0, 255, 220)
+
+        # Preenche o fundo do mapa com a cor correta
+        p.fillRect(self.rect(), c_bg) 
         
         cx, cy = self.width() / 2, self.height() / 2
         s = min((self.width() - 80) / max(1, self.sub_w), (self.height() - 80) / max(1, self.sub_d))
         
+        # Desenha o Substrato
         sw, sd = self.sub_w * s, self.sub_d * s
-        p.setBrush(QColor(100, 100, 120))
-        p.setPen(QPen(QColor(80, 80, 100), 2))
+        p.setBrush(c_sub_fill)
+        p.setPen(QPen(c_sub_line, 2))
         p.drawRect(QRectF(cx - sw/2, cy - sd/2, sw, sd))
         
+        # Desenha os limites do GCode (A linha pontilhada azul)
         if self.bounds:
             xmin, ymin, zmin, xmax, ymax, zmax = self.bounds
-            p.setBrush(QColor(34, 103, 252, 60))
+            p.setBrush(QColor(34, 103, 252, 60 if is_dark else 30)) # Mais translúcido no claro
             p.setPen(QPen(QColor(34, 103, 252), 1, Qt.DashLine))
             p.drawRect(QRectF(cx + xmin * s, cy - ymax * s, (xmax - xmin) * s, (ymax - ymin) * s))
             
@@ -314,26 +326,30 @@ class ClampEditorWidget(QWidget):
             p.rotate(-c['angle'])
             cw, cd = 20 * s, 30 * s
             
-            # Cores de alerta para o modo 2D
-            color_alert = QColor(255, 220, 0, 180) if not is_hover else QColor(255, 220, 0, 220)
+            color_alert = c_alert_fill if not is_hover else c_alert_hover
             
             if is_hover:
                 if getattr(self, 'hover_valid', True):
-                    p.setBrush(QColor(100, 255, 100, 150))
-                    p.setPen(QPen(QColor(50, 200, 50), 2))
+                    # Verde para posicionamento válido
+                    p.setBrush(QColor(100, 255, 100, 150) if is_dark else QColor(50, 200, 50, 150))
+                    p.setPen(QPen(QColor(50, 200, 50) if is_dark else QColor(20, 150, 20), 2))
                 else:
-                    p.setBrush(QColor(255, 100, 100, 150))
-                    p.setPen(QPen(QColor(200, 50, 50), 2))
-            elif c.get('collision', False): # SE ESTIVER EM CONFLITO
+                    # Vermelho para sobreposição de fixadores
+                    p.setBrush(QColor(255, 100, 100, 150) if is_dark else QColor(220, 50, 50, 150))
+                    p.setPen(QPen(QColor(200, 50, 50) if is_dark else QColor(180, 20, 20), 2))
+            elif c.get('collision', False): 
+                # Amarelo/Roxo para colisão com a trajetória de solda
                 p.setBrush(color_alert)
-                p.setPen(QPen(QColor(200, 150, 0), 2))
+                p.setPen(QPen(c_alert_line, 2))
             else:
-                p.setBrush(QColor(80, 80, 100))
-                p.setPen(QPen(QColor(40, 40, 50), 2))
+                # Cor normal do fixador na mesa
+                p.setBrush(c_clamp_fill)
+                p.setPen(QPen(c_clamp_line, 2))
             
             p.drawRect(QRectF(-cw/2, -cd/2, cw, cd))
             p.restore()
             
+        # Pinta primeiro todos que já estão posicionados, depois o que está no mouse
         for c in self.clamps: draw_clamp(c)
         if self.hover_clamp:  draw_clamp(self.hover_clamp, is_hover=True)
 
@@ -490,15 +506,19 @@ class editor_grafico(QDialog):
 
         # Aplica tema inicial
         self._dark_mode = True
-        self.ui.darkModeToggle.setChecked(self._dark_mode)
         self._apply_theme(self._dark_mode)
 
         # ── Conexoes ─────────────────────────────────────────────────────────
         self.ui.importbut.clicked.connect(self.importar_gcode)
         self.ui.exportbut.clicked.connect(self.exportar_imagem)
         self.ui.fullscreembut.clicked.connect(self.tela_cheia)
-        self.ui.darkModeToggle.clicked.connect(self._toggle_dark_mode)
+        self.ui.darkModeToggle.toggled.connect(self._toggle_dark_mode)
 
+        # Inicializa o botão silenciosamente
+        self.ui.darkModeToggle.blockSignals(True)
+        self.ui.darkModeToggle.setChecked(self._dark_mode)
+        self.ui.darkModeToggle.blockSignals(False)
+        
         # Simulacao
         self.ui.playbut.clicked.connect(self.iniciar_simulacao)
         self.ui.stopbut.clicked.connect(self.parar_simulacao)
@@ -878,13 +898,21 @@ class editor_grafico(QDialog):
         self.setWindowTitle(f"Leitor GCode — Laprosolda | FPS: {fps}")
 
     def abrir_configuracoes(self):
+        # --- REAJUSTE DA SIMULAÇÃO: Força a PAUSA em vez do STOP ---
+        self._pausar_simulacao()
+        self._pausar_reverso()
+        # -----------------------------------------------------------
+
         bnds = self.model.bounds if self.model else None
+        
+        # --- CORREÇÃO DO BUG DO CANCELAR: Backup dos fixadores originais ---
+        backup_clamps = [c.copy() for c in self.clamps]
+        
         dlg = ConfigDialog(self.grid_w, self.grid_d, bnds, self) 
         
         if dlg.exec_():
-            self.parar_simulacao()
+            # (Removemos o self.parar_simulacao() daqui para não zerar a linha)
 
-            # Pega os fixadores da janela 2D
             self.clamps = dlg.clamps
 
             self.grid_w = dlg.result_w
@@ -894,7 +922,6 @@ class editor_grafico(QDialog):
             self.substrate_w = dlg.result_sub_w
             self.substrate_d = dlg.result_sub_d
 
-            # Envia a lista de fixadores e aciona a verificação de colisão!
             self.viewer.set_clamps(self.clamps)
 
             self.viewer.substrate_enabled = self.substrate_enabled
@@ -905,8 +932,10 @@ class editor_grafico(QDialog):
                 self._layer_backup = self.viewer.current_layer
                 self.recarregar_modelo()
             
-            # Força o visualizador a redesenhar a tela com os novos fixadores
             self.viewer._dirty = True
+        else:
+            # --- CANCELOU GERAL: Restaura o 3D para como era antes de abrir a tela ---
+            self.viewer.set_clamps(backup_clamps)
 
     def recarregar_modelo(self):
         if not hasattr(self, 'current_file_path'): 
@@ -930,6 +959,19 @@ class editor_grafico(QDialog):
         self._update_layer_label()
         self._update_info()
         self._set_controls_enabled(True)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        
+        # --- A SOLUÇÃO DEFINITIVA DO PRIMEIRO CLIQUE ---
+        # Como a janela agora já existe, o botão sabe a própria largura.
+        # Nós o invertemos e desinvertemos silenciosamente para forçar
+        # o cálculo exato de onde a "bolinha" deve ficar.
+        if hasattr(self.ui, 'darkModeToggle'):
+            self.ui.darkModeToggle.blockSignals(True)
+            self.ui.darkModeToggle.setChecked(not self._dark_mode)
+            self.ui.darkModeToggle.setChecked(self._dark_mode)
+            self.ui.darkModeToggle.blockSignals(False)
 
     def closeEvent(self, event):
         super().closeEvent(event)
