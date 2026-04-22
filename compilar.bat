@@ -5,8 +5,8 @@ echo     Isso pode levar alguns minutos...
 echo ===================================================
 echo.
 
-:: 1. Executa o PyInstaller definindo o nome final via parametro -n
-C:\Users\Vitor\AppData\Local\Programs\Python\Python313\python.exe -m PyInstaller --noconsole --onefile --hidden-import PyQt5 --hidden-import OpenGL -n Leitor_GCode_Laprosolda mainGL.py
+:: 1. Executa o PyInstaller definindo o nome e o ICONE
+C:\Users\Vitor\AppData\Local\Programs\Python\Python313\python.exe -m PyInstaller --noconsole --onefile --hidden-import PyQt5 --hidden-import OpenGL -n Leitor_GCode_Laprosolda --icon=icone.ico mainGL.py
 
 :: 2. Move o executavel pronto para a pasta raiz do projeto
 echo.
