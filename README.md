@@ -4,7 +4,6 @@ Olá, Rosa.
 
 Para visualizar o estágio atual do software é necessário baixar todos os arquivos e excutar o arquivo "Leitor_GCode_Laprosolda.exe" (Clique duas vezes em cima dele).
 
- ```pip install PyQt5 numpy PyOpenGL PyOpenGL_accelerate```
 
 ## Dia 1
 
