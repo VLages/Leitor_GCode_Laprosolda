@@ -2,7 +2,7 @@
 
 Olá, Rosa.
 
-Para visualizar o estágio atual do software é necessário baixar todos os arquivos e seus respectivos diretórios, extrair eles para fora do arquivo .zip e rodar o arquivo mainGL.py (Clique duas vezes em cima dele). Caso ocorra algum erro de inicialização, baixe as seguintes bibliotecas no terminal do computador:
+Para visualizar o estágio atual do software é necessário baixar todos os arquivos e excutar o arquivo "Leitor_GCode_Laprosolda.exe" (Clique duas vezes em cima dele).
 
  ```pip install PyQt5 numpy PyOpenGL PyOpenGL_accelerate```
 
@@ -109,3 +109,4 @@ Feitos desse dia:
 - Foi corrigido um bug envolvendo o botão de cancelar na aba de colocar fixadores. Agora apertar o botão de cancelar na aba de configurações ira realmente cancelar sua ação
 - Foi corrigido o bug do botão de mudar o tema do programa o ser clicado pela primeira vez
 - As cores da aba de posicionar os fixadores tiveram cores adaptadas para o tema claro também
+- Criei um arquivo .exe para o programa poder ser rodado de qualquer computador
