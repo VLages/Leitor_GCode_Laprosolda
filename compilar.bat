@@ -13,7 +13,7 @@ echo.
 echo ===================================================
 echo     ORGANIZANDO OS ARQUIVOS...
 echo ===================================================
-move dist\mainGL.exe .\Simulador_Laprosolda.exe
+move dist\mainGL.exe .\Leitor_GCode_Laprosolda.exe
 
 :: 3. Apaga os arquivos e pastas temporarias
 rmdir /s /q build
@@ -22,6 +22,6 @@ del mainGL.spec
 
 echo.
 echo ===================================================
-echo     SUCESSO! O Simulador_Laprosolda.exe esta pronto!
+echo     SUCESSO! O Leitor_GCode_Laprosolda.exe esta pronto!
 echo ===================================================
 pause
