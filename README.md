@@ -2,7 +2,7 @@
 
 Olá, Rosa.
 
-Para visualizar o estágio atual do software é necessário baixar todos os arquivos e excutar o arquivo "Leitor_GCode_Laprosolda.exe" (Clique duas vezes em cima dele).
+Para visualizar o estágio atual do software é necessário apenas baixar e excutar o arquivo "Leitor_GCode_Laprosolda.exe".
 
 
 ## Dia 1

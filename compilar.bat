@@ -1,27 +1,27 @@
 @echo off
 echo ===================================================
-echo     COMPILANDO O SIMULADOR LAPROSOLDA...
-echo     Isso pode levar alguns minutos. Aguarde.
+echo     COMPILANDO: Leitor_GCode_Laprosolda
+echo     Isso pode levar alguns minutos...
 echo ===================================================
 echo.
 
-:: 1. Executa o PyInstaller
-C:\Users\Vitor\AppData\Local\Programs\Python\Python313\python.exe -m PyInstaller --noconsole --onefile --hidden-import PyQt5 --hidden-import OpenGL mainGL.py
+:: 1. Executa o PyInstaller definindo o nome final via parametro -n
+C:\Users\Vitor\AppData\Local\Programs\Python\Python313\python.exe -m PyInstaller --noconsole --onefile --hidden-import PyQt5 --hidden-import OpenGL -n Leitor_GCode_Laprosolda mainGL.py
 
-:: 2. Move o executavel pronto para a pasta principal (e ja renomeia ele)
+:: 2. Move o executavel pronto para a pasta raiz do projeto
 echo.
 echo ===================================================
 echo     ORGANIZANDO OS ARQUIVOS...
 echo ===================================================
-move dist\mainGL.exe .\Leitor_GCode_Laprosolda.exe
+move dist\Leitor_GCode_Laprosolda.exe .\Leitor_GCode_Laprosolda.exe
 
-:: 3. Apaga os arquivos e pastas temporarias
+:: 3. Limpa os rastros da compilacao
 rmdir /s /q build
 rmdir /s /q dist
-del mainGL.spec
+del Leitor_GCode_Laprosolda.spec
 
 echo.
 echo ===================================================
-echo     SUCESSO! O Leitor_GCode_Laprosolda.exe esta pronto!
+echo     SUCESSO! O Leitor_GCode_Laprosolda.exe esta pronto.
 echo ===================================================
 pause
